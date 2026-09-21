@@ -44,7 +44,7 @@
 #Developed by Rung and Martinski
 #
 #-----------------------------------------------------------------------
-# Last Updated: 2026-Sep-14
+# Last Updated: 2026-Sep-20
 ########################################################################
 
 #Update Log:
@@ -98,7 +98,7 @@ set -u
 
 readonly version=3.1.1
 readonly REV="$version"
-readonly VERS_TAG="Alpha_26091423"
+readonly VERS_TAG="Alpha_26092023"
 readonly INTERVAL=5
 readonly MIN_KNOCK_PORT=1024  #Avoid well-known RESERVED ports#
 readonly MULTI_PORT_KNOCK_WAIT=30
@@ -228,7 +228,7 @@ readonly AMTM_Mail_Conf_File="${AMTM_Mail_Dir_Path}/email.conf"
 readonly AMTM_Mail_Pswd_File="${AMTM_Mail_Dir_Path}/emailpw.enc"
 
 # The shared Custom Email Library Script to send email notifications #
-readonly EMAIL_LIB_BRANCH="develop"   ##SET to "master" for RELEASE##
+readonly EMAIL_LIB_BRANCH="master"
 readonly EMAIL_LIB_URL_BASE2="https://raw.githubusercontent.com/MartinSkyW/CustomMiscUtils"
 readonly EMAIL_LIB_URL_BASE1="https://raw.githubusercontent.com/Martinski4GitHub/CustomMiscUtils"
 readonly EMAIL_LIB_GH_URL1="${EMAIL_LIB_URL_BASE1}/${EMAIL_LIB_BRANCH}/EMail"
@@ -720,10 +720,12 @@ _LogMsg_()
     if [ $# -lt 1 ] || [ -z "$1" ]
     then return 1
     fi
-    if [ $# -lt 2 ] || [ -z "$2" ] || \
-       ! echo "$2" | grep -qE '^[1-6]$'
-    then logPrioNum="$pLogNOTIC"
-    else logPrioNum="$2"
+    local logPrioNum
+
+    if [ $# -gt 1 ] && [ -n "$2" ] && \
+       echo "$2" | grep -qE '^[1-6]$'
+    then logPrioNum="$2"
+    else logPrioNum="$pLogNOTIC"
     fi
     if "$isInteractive" && \
        { [ $# -lt 3 ] || [ "$3" != "NOECHO" ] ; }
@@ -2195,7 +2197,7 @@ _AcquireEmailMutexFLock_()
         if [ -z "$procIDof" ] || \
            ! echo "$procIDof" | grep -qow "$procIDno"
         then
-            _PrintMsg_ "Stale Lock Found. Resetting Lock file..."
+            _PrintMsg_ "Stale Lock Found. Resetting Lock file...\n"
             _ReleaseEmailMutexFLock_
         fi
     fi
@@ -2210,7 +2212,7 @@ _AcquireEmailMutexFLock_()
         if [ -n "$procInfo" ]
         then procInfo="$(echo "$procInfo" | sed 's/|/, PID=/')"
         fi
-        _PrintMsg_ "${MAGNTct}*WARNING*${CLEARct}: Another process [$procInfo] has the Lock."
+        _PrintMsg_ "${MAGNTct}*WARNING*${CLEARct}: Another process [$procInfo] has the Lock.\n"
         retCode=1 ; emailUpdateMutexFLock_OK=false
     fi
 
@@ -2795,11 +2797,11 @@ _SendKnockEmail_()
 	   printf "\nInterface ID: <b>${1}</b>"
 	   printf "\nSource IPv4 Address: <b>${2}</b>\n"
 
-       if [ "${#3}" -le 20 ]
+       if [ "${#3}" -le 25 ]
        then printf "Port Number(s): <b>${3}</b>"
        else printf "\nPort Number(s):\n<b>${3}</b>\n"
        fi
-       if [ "${#4}" -le 20 ]
+       if [ "${#4}" -le 25 ]
        then printf "\nCommand: <b>${4}</b>\n\n"
        else printf "\nCommand:\n<b>${4}</b>\n\n"
        fi
@@ -3491,7 +3493,7 @@ _Read_dmesgToKnockLogFile_()
 
 	while true
 	do
-		knockMSG="$(dmesg | grep -E "^${shScriptName}[[:blank:]]+" | tail -n1)"
+		knockMSG="$(dmesg | grep -E "^${shScriptName}[[:blank:]].* PROTO=" | tail -n1)"
 		if [ -n "$knockMSG" ] && [ "$knockMSG" != "$LASTmsg" ]
 		then
 			echo "$knockMSG" >> "$dmesgKnockLogFILE"
