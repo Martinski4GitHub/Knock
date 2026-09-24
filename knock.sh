@@ -44,7 +44,7 @@
 #Developed by Rung and Martinski
 #
 #-----------------------------------------------------------------------
-# Last Updated: 2026-Sep-20
+# Last Updated: 2026-Sep-23
 ########################################################################
 
 #Update Log:
@@ -98,7 +98,7 @@ set -u
 
 readonly version=3.1.1
 readonly REV="$version"
-readonly VERS_TAG="Alpha_26092023"
+readonly VERS_TAG="Beta_26092323"
 readonly INTERVAL=5
 readonly MIN_KNOCK_PORT=1024  #Avoid well-known RESERVED ports#
 readonly MULTI_PORT_KNOCK_WAIT=30
@@ -2880,7 +2880,7 @@ _SetConfigOption_()
 		then
 			sed -i "s/${1}=.*/${1}=${2}/" "$optConfFile"
 		else
-			newVal="$(echo "$2" | sed 's/[\/.,*-]/\\&/g')"
+			newVal="$(echo "$2" | sed 's/[\/$|.*^&-]/\\&/g')"
 			sed -i "s/${1}=.*/${1}=\"${newVal}\"/" "$optConfFile"
 		fi
 	fi
@@ -2919,7 +2919,7 @@ _GetConfigOption_()
 		fi
 		echo "$defValue"
 	else
-		echo "$keyPair" | cut -d'=' -f2 | sed "s/['\"]//g"
+		echo "$keyPair" | cut -d'=' -f2- | sed "s/['\"]//g"
 	fi
 	return 0
 }
