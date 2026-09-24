@@ -44,7 +44,7 @@
 #Developed by Rung and Martinski
 #
 #-----------------------------------------------------------------------
-# Last Updated: 2026-Sep-23
+# Last Updated: 2026-Sep-24
 ########################################################################
 
 #Update Log:
@@ -98,7 +98,7 @@ set -u
 
 readonly version=3.1.1
 readonly REV="$version"
-readonly VERS_TAG="Beta_26092323"
+readonly VERS_TAG="Beta_26092408"
 readonly INTERVAL=5
 readonly MIN_KNOCK_PORT=1024  #Avoid well-known RESERVED ports#
 readonly MULTI_PORT_KNOCK_WAIT=30
@@ -2849,6 +2849,9 @@ _SendTestEmail_()
 	return "$retCode"
 }
 
+_EscapeChars_()
+{ printf "%s" "$1" | sed 's/[][\/{}()$|.*^&+-]/\\&/g' ; }
+
 #-------------------------------------#
 # Added by Martinski W. [2026-Jun-07] #
 #-------------------------------------#
@@ -2868,20 +2871,22 @@ _SetConfigOption_()
 	fi
 	chmod 644 "$optConfFile"
 
+	#Get a "clean" string for 'grep' & 'sed'#
+	newVal="$(_EscapeChars_ "$2")"
+
 	if ! grep -qE "^${1}=.*" "$optConfFile"
 	then
 		if echo "$2" | grep -qE '^(true|false)$'
 		then echo "${1}=${2}" >> "$optConfFile"
-		else echo "${1}=\"${2}\"" >> "$optConfFile"
+		else echo "${1}='${2}'" >> "$optConfFile"
 		fi
-	elif ! grep -qE "^${1}=${2}" "$optConfFile"
+	elif ! grep -qE "^${1}=$newVal" "$optConfFile"
 	then
 		if echo "$2" | grep -qE '^(true|false)$'
 		then
 			sed -i "s/${1}=.*/${1}=${2}/" "$optConfFile"
 		else
-			newVal="$(echo "$2" | sed 's/[\/$|.*^&-]/\\&/g')"
-			sed -i "s/${1}=.*/${1}=\"${newVal}\"/" "$optConfFile"
+			sed -i "s/${1}=.*/${1}='${newVal}'/" "$optConfFile"
 		fi
 	fi
 	return 0
@@ -2914,7 +2919,7 @@ _GetConfigOption_()
 	if [ -z "$keyPair" ]
 	then
 		if [ -z "$defValue" ]
-		then echo "${1}=\"\"" >> "$optConfFile"
+		then echo "${1}=''" >> "$optConfFile"
 		else echo "${1}=$defValue" >> "$optConfFile"
 		fi
 		echo "$defValue"
@@ -3013,7 +3018,7 @@ _SetSecondaryEmailAddress_()
    local nextCC_NameOpt  nextCC_AddrOpt
    local currCC_NameStr="Current Name/Alias:"
    local currCC_AddrStr="Current Address:"
-   local invalidChars='[][" *?/$\\]'   #Avoid parsing issues#
+   local invalidChars='[][" *?\\]'   #Avoid parsing issues#
    local clearOptStr="${GREENct}C${CLEARct}=Clear/Remove Setting"
    local doReturnToMenu  doClearSetting  minCharLen  maxCharLen  curCharLen
    local menuExitStr="${GREENct}e${CLEARct}=Go back"
@@ -3029,6 +3034,7 @@ _SetSecondaryEmailAddress_()
        nextCC_AddrOpt="$currCC_AddrOpt"
        currCC_AddrStr="$currCC_AddrStr ${GREENct}${currCC_AddrOpt}${CLEARct}"
    fi
+   currCC_AddrStr="$(echo "$currCC_AddrStr" | sed 's/%/%%/g')"
 
    userInput=""
    minCharLen=10
@@ -3091,8 +3097,8 @@ _SetSecondaryEmailAddress_()
    if "$doClearSetting" || \
       { [ -z "$nextCC_AddrOpt" ] && [ -n "$currCC_AddrOpt" ] ; }
    then
-       _SetConfigOption_ EMAIL_CC_NAME "TBD"
-       _SetConfigOption_ EMAIL_CC_ADDR "TBD"
+       _SetConfigOption_ EMAIL_CC_NAME 'TBD'
+       _SetConfigOption_ EMAIL_CC_ADDR 'TBD'
        printf "\nThe secondary email address and associated name/alias were removed successfully.\n"
        _PressAnyKey_
        return 0
@@ -3107,6 +3113,7 @@ _SetSecondaryEmailAddress_()
        nextCC_NameOpt="$currCC_NameOpt"
        currCC_NameStr="$currCC_NameStr ${GREENct}${currCC_NameOpt}${CLEARct}"
    fi
+   currCC_NameStr="$(echo "$currCC_NameStr" | sed 's/%/%%/g')"
 
    userInput=""
    minCharLen=6
@@ -3214,8 +3221,8 @@ _AdditionalOptionsMenu_()
         then
             if [ -n "$CC_NAME" ] && [ -n "$CC_ADDRESS" ]
             then
-			    printf "     [Current Name/Alias: ${GREENct}${CC_NAME}${CLEARct}]\n"
-			    printf "     [Current 2nd Address: ${GREENct}${CC_ADDRESS}${CLEARct}]\n"
+			    printf "     [Current Name/Alias: ${GREENct}%s${CLEARct}]\n" "$CC_NAME"
+			    printf "     [Current 2nd Address: ${GREENct}%s${CLEARct}]\n" "$CC_ADDRESS"
             else
 			    printf "     [Currently ${YELLWct}NONE${CLEARct}]\n"
             fi
