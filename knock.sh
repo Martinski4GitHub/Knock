@@ -44,7 +44,7 @@
 #Developed by Rung and Martinski
 #
 #-----------------------------------------------------------------------
-# Last Updated: 2026-Sep-24
+# Last Updated: 2026-Sep-26
 ########################################################################
 
 #Update Log:
@@ -98,7 +98,7 @@ set -u
 
 readonly version=3.1.1
 readonly REV="$version"
-readonly VERS_TAG="Beta_26092408"
+readonly VERS_TAG="Beta_26092623"
 readonly INTERVAL=5
 readonly MIN_KNOCK_PORT=1024  #Avoid well-known RESERVED ports#
 readonly MULTI_PORT_KNOCK_WAIT=30
@@ -2876,13 +2876,13 @@ _SetConfigOption_()
 
 	if ! grep -qE "^${1}=.*" "$optConfFile"
 	then
-		if echo "$2" | grep -qE '^(true|false)$'
+		if printf '%s\n' "$2" | grep -qE '^(true|false)$'
 		then echo "${1}=${2}" >> "$optConfFile"
 		else echo "${1}='${2}'" >> "$optConfFile"
 		fi
 	elif ! grep -qE "^${1}=$newVal" "$optConfFile"
 	then
-		if echo "$2" | grep -qE '^(true|false)$'
+		if printf '%s\n' "$2" | grep -qE '^(true|false)$'
 		then
 			sed -i "s/${1}=.*/${1}=${2}/" "$optConfFile"
 		else
@@ -3019,9 +3019,9 @@ _SetSecondaryEmailAddress_()
    local currCC_NameStr="Current Name/Alias:"
    local currCC_AddrStr="Current Address:"
    local invalidChars='[][" *?\\]'   #Avoid parsing issues#
+   local menuExitStr="${GREENct}e${CLEARct}=Go back"
    local clearOptStr="${GREENct}C${CLEARct}=Clear/Remove Setting"
    local doReturnToMenu  doClearSetting  minCharLen  maxCharLen  curCharLen
-   local menuExitStr="${GREENct}e${CLEARct}=Go back"
 
    currCC_NameOpt="$(_GetConfigOption_ EMAIL_CC_NAME)"
    currCC_AddrOpt="$(_GetConfigOption_ EMAIL_CC_ADDR)"
@@ -3054,13 +3054,13 @@ _SetSecondaryEmailAddress_()
 
        [ -z "$userInput" ] && break
 
-       if echo "$userInput" | grep -qE '^(e|exit|Exit)$'
+       if printf '%s\n' "$userInput" | grep -qE '^(e|exit|Exit)$'
        then doReturnToMenu=true ; break ; fi
 
-       if echo "$userInput" | grep -qE '^(C|c)$'
+       if printf '%s\n' "$userInput" | grep -qE '^(C|c)$'
        then doClearSetting=true ; break ; fi
 
-       if ! echo "$userInput" | grep -qE '.+[@].+'
+       if ! printf '%s\n' "$userInput" | grep -qE '.+[@].+'
        then
            printf "\n${REDct}INVALID input.${CLEARct}\n"
            printf "Ampersand character [${GREENct}@${CLEARct}] was NOT found, or it's found at the wrong place.\n"
@@ -3069,7 +3069,7 @@ _SetSecondaryEmailAddress_()
        fi
 
        # Catch invalid chars that may cause parsing errors #
-       if echo "$userInput" | grep -qE "$invalidChars"
+       if printf '%s\n' "$userInput" | grep -qE "$invalidChars"
        then
            printf "\n${REDct}INVALID input.${CLEARct}\n"
            printf "One or more invalid characters were found.\n"
@@ -3126,11 +3126,12 @@ _SetSecondaryEmailAddress_()
        printf "[${menuExitStr}]\n[${currCC_NameStr}]:  "
        read -r userInput
 
-       if [ -z "$userInput" ] || echo "$userInput" | grep -qE '^(e|exit|Exit)$'
+       if [ -z "$userInput" ] || \
+          printf '%s\n' "$userInput" | grep -qE '^(e|exit|Exit)$'
        then doReturnToMenu=true ; break ; fi
 
        # Catch invalid chars that may cause parsing errors #
-       if echo "$userInput" | grep -qE "$invalidChars"
+       if printf '%s\n' "$userInput" | grep -qE "$invalidChars"
        then
            printf "\n${REDct}INVALID input.${CLEARct}\n"
            printf "One or more invalid characters were found.\n"
@@ -3213,7 +3214,7 @@ _AdditionalOptionsMenu_()
             then statusSTR="${GREENct}HTML"
             else statusSTR="${MAGNTct}Plain Text"
             fi
-            printf "     [Current Format: ${statusSTR}${CLEARct}]\n"
+            printf "     [Currently: ${statusSTR}${CLEARct}]\n"
         fi
 
         printf "\n ${numberCT} 4${CLEARct}.${optionCT}Set email secondary address ${CLEARct}\n"
@@ -3307,8 +3308,8 @@ then
 		banner
 		ShowStatus
 
-		printf " Main Menu\n"
-		printf " =========\n\n"
+		printf "    ${GREENct}Main Menu${CLEARct}\n"
+		printf "    =========\n\n"
 		printf " ${GREENct}1${CLEARct}. Install/reinstall ${shScriptName}\n"
 		printf " ${GREENct}2${CLEARct}. Uninstall ${shScriptName}\n"
 		if CheckInstall
