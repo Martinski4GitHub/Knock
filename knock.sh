@@ -44,7 +44,7 @@
 #Developed by Rung and Martinski
 #
 #-----------------------------------------------------------------------
-# Last Updated: 2026-Sep-26
+# Last Updated: 2026-Sep-30
 ########################################################################
 
 #Update Log:
@@ -91,14 +91,15 @@
 # - Provided method to direct install develop version
 # - Fixed issue with Skynet flooding the dmesg buffer with unsolicited WAN traffic entries.
 # - Correctly display new version during update
-# 3.1.1
+# 3.2.0
 # - New "Email Notifications" feature.
+# - Removed support for Entware 'screen' utility.
 #-----------------------------------------------------------------------#
 set -u
 
-readonly version=3.1.1
+readonly version=3.2.0
 readonly REV="$version"
-readonly VERS_TAG="Beta_26092623"
+readonly VERS_TAG="Beta_26093000"
 readonly INTERVAL=5
 readonly MIN_KNOCK_PORT=1024  #Avoid well-known RESERVED ports#
 readonly MULTI_PORT_KNOCK_WAIT=30
@@ -227,15 +228,18 @@ readonly AMTM_Mail_Dir_Path="${ADDONS_DIR}/amtm/mail"
 readonly AMTM_Mail_Conf_File="${AMTM_Mail_Dir_Path}/email.conf"
 readonly AMTM_Mail_Pswd_File="${AMTM_Mail_Dir_Path}/emailpw.enc"
 
-# The shared Custom Email Library Script to send email notifications #
-readonly EMAIL_LIB_BRANCH="master"
-readonly EMAIL_LIB_URL_BASE2="https://raw.githubusercontent.com/MartinSkyW/CustomMiscUtils"
-readonly EMAIL_LIB_URL_BASE1="https://raw.githubusercontent.com/Martinski4GitHub/CustomMiscUtils"
-readonly EMAIL_LIB_GH_URL1="${EMAIL_LIB_URL_BASE1}/${EMAIL_LIB_BRANCH}/EMail"
-readonly EMAIL_LIB_GH_URL2="${EMAIL_LIB_URL_BASE2}/${EMAIL_LIB_BRANCH}/EMail"
-readonly ADDONS_SHARED_LIBS_DIR_PATH="${ADDONS_DIR}/shared-libs"
-readonly CUSTOM_EMAIL_LIB_SCRIPT_FNAME="CustomEMailFunctions.lib.sh"
-readonly CUSTOM_EMAIL_LIB_SCRIPT_FPATH="${ADDONS_SHARED_LIBS_DIR_PATH}/$CUSTOM_EMAIL_LIB_SCRIPT_FNAME"
+# The custom SendEmail Script to handle email notifications #
+readonly SEND_EMAIL_BRANCH="develop"   ##**TBD** SET TO "master" FOR RELEASE**##
+readonly SEND_EMAIL_URL_BASE2="https://raw.githubusercontent.com/MartinSkyW"
+readonly SEND_EMAIL_URL_BASE1="https://raw.githubusercontent.com/Martinski4GitHub"
+readonly SEND_EMAIL_REPO_URL1="${SEND_EMAIL_URL_BASE1}/SendEmail/$SEND_EMAIL_BRANCH"
+readonly SEND_EMAIL_REPO_URL2="${SEND_EMAIL_URL_BASE2}/SendEmail/$SEND_EMAIL_BRANCH"
+
+readonly SEND_EMAIL_SCRIPT_TNAME="SendEmail"
+readonly SEND_EMAIL_SCRIPT_FNAME="${SEND_EMAIL_SCRIPT_TNAME}.sh"
+readonly SEND_EMAIL_INSTALL_PATH="${ADDONS_DIR}/${SEND_EMAIL_SCRIPT_TNAME}.d"
+readonly SEND_EMAIL_SCRIPT_FPATH="${SEND_EMAIL_INSTALL_PATH}/$SEND_EMAIL_SCRIPT_FNAME"
+readonly SEND_EMAIL_SYMBLK_FPATH="${SCRIPTS_DIR}/$SEND_EMAIL_SCRIPT_TNAME"
 
 readonly SCRIPT_REPO_URL="https://raw.githubusercontent.com/Rung-Asus/Knock"
 readonly SCRIPT_URL_MAIN="${SCRIPT_REPO_URL}/main"
@@ -249,19 +253,16 @@ readonly curlErrLogFile="${TEMP_DIR}/tmpCurl_${scriptFNameTag}_$$.ERR.LOG"
 # Workaround for Entware ELF binaries compiled with RUNPATH #
 unset LD_LIBRARY_PATH
 [ "$HOME" != "/root" ] && export HOME="/root"
-export SCREENDIR="${HOME}/.screen"
-
-#To optionally use Entware 'screen' utility#
-useEntwareScreen=false
 
 readonly emailSenderID="Knock"
 readonly tmpEmailBodyFPath="${TEMP_DIR}/tmpEMailBody_${scriptFNameTag}_$$.TMP"
 
 # User-configurable email settings #
-sendEmail_CC_Name=""
-sendEmail_CC_Addr=""
-sendEmail_FormatType="HTML"
-sendEmail_EnabledFlag=false
+email_CC_Name=""
+email_CC_Addr=""
+email_CC_Addr_OK=false
+email_FormatType="HTML"
+email_ENABLEDopt=false
 isEmailFormatTypeHTML=true
 isEmailConfigEnabledInAMTM=false
 
@@ -972,29 +973,16 @@ _RemoveCustomFirewallRules_()
 #Verify everything is in its place#
 CheckInstall()
 {
-	if "$useEntwareScreen"
-	then
-		if [ ! -x /opt/sbin/screen ] || \
-		   [ ! -s "$usbPostMount" ]  || \
-		   ! grep -q "/$shScriptName" "$usbPostMount"
-		then return 1
-		fi
-	else
-		if [ ! -s "$servicesStart" ] || \
-		   ! grep -q "/$shScriptName" "$servicesStart"
-		then return 1
-		fi
-	fi
-
 	if [ ! -s "$shScriptFile" ]  || \
 	   [ ! -s "$configFPath" ]   || \
 	   [ ! -s "$profileAdd" ]    || \
 	   [ ! -s "$firewallStart" ] || \
-	   ! grep -q "/$shScriptName" "$profileAdd" || \
-	   ! grep -q "/$shScriptName" "$firewallStart"
+	   [ ! -s "$servicesStart" ] || \
+	   ! grep -q "$shScriptFile" "$profileAdd"   || \
+	   ! grep -q "$shScriptFile" "$servicesStart" || \
+	   ! grep -q "$shScriptFile" "$firewallStart"
 	then return 1
 	fi
-
 	return 0
 }
 
@@ -1003,16 +991,9 @@ CheckInstall()
 #-------------------------------------#
 _CheckBackgroundProcess_()
 {
-	if "$useEntwareScreen"
-	then
-		if /opt/sbin/screen -ls knock >/dev/null
-		then return 0
-		fi
-	else
-		if top -bn1 | grep -qE "[/]$shScriptName -loop" && \
-		   top -bn1 | grep -qE "[/]$shScriptName -dmesgLog"
-		then return 0
-		fi
+	if top -bn1 | grep -qE "[/]$shScriptName -loop" && \
+	   top -bn1 | grep -qE "[/]$shScriptName -dmesgLog"
+	then return 0
 	fi
 	return 1
 }
@@ -1516,7 +1497,6 @@ UpdateScript()
 		echo "Restarting..."
 		$shScriptFile -start -nobanner
 		printf "Update completed.\n\n"
-		#Show updated version#
 		$shScriptFile -version
 		ShowStatus
 		ShowConfig quietCheck
@@ -2119,7 +2099,7 @@ _ValidateMutexFLock_()
 
 #---------------------------------------------------------------------#
 # This is a mutually exclusive, non-blocking FLOCK mechanism used
-# to prevent more than one background daemon process running.
+# to prevent more than one Knock background daemon process running.
 #---------------------------------------------------------------------#
 _AcquireMutexFLock_()
 {
@@ -2153,67 +2133,6 @@ _AcquireMutexFLock_()
         fi
         _LogMsg_ "**ERROR**: Another process [$procInfo] has the Lock." "$pLogERROR"
         retCode=1 ; knockMutexFLock_OK=false
-    fi
-
-    return "$retCode"
-}
-
-##-------------------------------------##
-## Added by Martinski W. [2026-Sep-12] ##
-##-------------------------------------##
-readonly emailUpdateMutexFLock_FD=783
-readonly emailUpdateMutexFLock_FN="${TEMP_DIR}/CEMailUpdateCheck.FLOCK"
-emailUpdateMutexFLock_OK=false   #To check if/when we own the Lock#
-
-_ReleaseEmailMutexFLock_()
-{
-	if [ $# -gt 0 ] && \
-	   [ "$1" = "checkLockOK" ] && \
-	   [ "$emailUpdateMutexFLock_OK" = "false" ]
-	then return 0
-	fi
-	printf '' > "$emailUpdateMutexFLock_FN"
-	flock -u "$emailUpdateMutexFLock_FD" 2>/dev/null
-    eval exec "${emailUpdateMutexFLock_FD}>&-"
-	emailUpdateMutexFLock_OK=false
-}
-
-#---------------------------------------------------------------------#
-# This is a mutually exclusive, blocking FLOCK mechanism used to
-# prevent updating the shared email script by concurrent processes.
-#---------------------------------------------------------------------#
-_AcquireEmailMutexFLock_()
-{
-    local retCode  procInfo  procName  procIDno  procIDof=""
-
-    if [ -s "$emailUpdateMutexFLock_FN" ]
-    then
-        procInfo="$(head -n1 "$emailUpdateMutexFLock_FN")"
-        procName="$(echo "$procInfo" | cut -d'|' -f1)"
-        procIDno="$(echo "$procInfo" | cut -d'|' -f2)"
-        if [ -n "$procName" ] && [ -n "$procIDno" ]
-        then procIDof="$(pidof "$procName")"
-        fi
-        if [ -z "$procIDof" ] || \
-           ! echo "$procIDof" | grep -qow "$procIDno"
-        then
-            _PrintMsg_ "Stale Lock Found. Resetting Lock file...\n"
-            _ReleaseEmailMutexFLock_
-        fi
-    fi
-
-    eval exec "${emailUpdateMutexFLock_FD}>$emailUpdateMutexFLock_FN"
-    if flock -x "$emailUpdateMutexFLock_FD" 2>/dev/null
-    then
-        printf "$(basename "$0")|$$\n" > "$emailUpdateMutexFLock_FN"
-        retCode=0 ; emailUpdateMutexFLock_OK=true
-    else
-        procInfo="$(head -n1 "$emailUpdateMutexFLock_FN")"
-        if [ -n "$procInfo" ]
-        then procInfo="$(echo "$procInfo" | sed 's/|/, PID=/')"
-        fi
-        _PrintMsg_ "${MAGNTct}*WARNING*${CLEARct}: Another process [$procInfo] has the Lock.\n"
-        retCode=1 ; emailUpdateMutexFLock_OK=false
     fi
 
     return "$retCode"
@@ -2386,38 +2305,12 @@ _WaitForCustomFirewallRules_()
 }
 
 #-------------------------------------#
-# Added by Martinski W. [2026-Jun-02] #
-#-------------------------------------#
-_StartBackground_ScreenProcess_()
-{
-	if [ ! -x /opt/sbin/screen ]
-	then return 1
-	fi
-	local sleepSecsNUM=0  sleepSecsMAX
-
-	if [ $# -eq 0 ] || [ -z "$1" ] || \
-	   ! echo "$1" | grep -qE '^[1-9][0-9]?$'
-	then sleepSecsMAX=10
-	else sleepSecsMAX="$1"
-	fi
-
-	/opt/sbin/screen -dmS knock "$shScriptFile" -loop
-	sleep 2   #Allow time to initialize#
-
-	while [ "$((sleepSecsNUM++))" -lt "$sleepSecsMAX" ]
-	do
-		sleep 1
-		if /opt/sbin/screen -ls knock >/dev/null && \
-		   top -bn1 | grep -qE "[/]$shScriptName -dmesgLog"
-		then break
-		fi
-	done
-	return 0
-}
-
-#-------------------------------------#
 # Added by Martinski W. [2026-Jun-06] #
 #-------------------------------------#
+#--------------------------------------------------------------#
+# Even though Entware 'screen' utility is NO LONGER SUPPORTED,
+# we need to make sure any rogue 'screen' process is STOPPED.
+#--------------------------------------------------------------#
 _StopBackground_ScreenProcess_()
 {
 	local sleepSecsNUM=0  sleepSecsMAX
@@ -2449,6 +2342,10 @@ _StopBackground_ScreenProcess_()
 #-------------------------------------#
 # Added by Martinski W. [2026-Jun-06] #
 #-------------------------------------#
+#--------------------------------------------------------------#
+# Even though Entware 'screen' utility is NO LONGER SUPPORTED,
+# we need to make sure any rogue 'screen' process is STOPPED.
+#--------------------------------------------------------------#
 _CheckAndStopBackground_ScreenProcess_()
 {
 	if [ -x /opt/sbin/screen ] && \
@@ -2457,7 +2354,7 @@ _CheckAndStopBackground_ScreenProcess_()
 		{ [ $# -eq 0 ] || [ -z "$1" ] ; } && \
 		printf "An existing background process must be stopped first. Please wait...\n"
 		_StopBackground_ScreenProcess_ 5
-		return $?
+		return "$?"
 	fi
 	return 0
 }
@@ -2570,12 +2467,7 @@ _StartBackgroundProcess_()
 	_LogMsg_ "$logMsg" "$pLogWARNG" ; _LogKnock_ "$logMsg"
 	printf "Please wait...\n"
 
-	if "$useEntwareScreen"
-	then
-		_StartBackground_ScreenProcess_ 5
-	else
-		_StartBackground_DaemonProcess_ 5
-	fi
+	_StartBackground_DaemonProcess_ 5
 
 	if CheckStatus
 	then
@@ -2632,6 +2524,63 @@ _StopBackgroundProcess_()
 	fi
 }
 
+#-------------------------------------#
+# Added by Martinski W. [2026-Sep-28] #
+#-------------------------------------#
+_InstallCustomSendEmailScript_()
+{
+   local retCode  urlDLcount  urlDLmax  theVerStr
+   local tempScriptPathDL="${TEMP_DIR}/${SEND_EMAIL_SCRIPT_FNAME}.DL.$$.SH"
+
+   _PrintMsg_ "\nInstalling the ${GREENct}${SEND_EMAIL_SCRIPT_TNAME}${CLEARct} script to handle email notifications..."
+
+   retCode=1 ; urlDLcount=0 ; urlDLmax=2
+   for theScriptURL in "$SEND_EMAIL_REPO_URL1" "$SEND_EMAIL_REPO_URL2"
+   do
+       urlDLcount="$((urlDLcount + 1))"
+       if _DownloadFileFromRepo_ "$theScriptURL" "$SEND_EMAIL_SCRIPT_FNAME" "$tempScriptPathDL" "$urlDLcount"
+       then
+           retCode=0
+           chmod 755 "$tempScriptPathDL"
+           if ! $tempScriptPathDL -install -quiet
+           then retCode=1
+           fi
+           break
+       fi
+   done
+
+   [ "$retCode" -ne 0 ] && \
+   _PrintMsg_ "\nThe script ${REDct}${SEND_EMAIL_SCRIPT_TNAME}${CLEARct} was NOT installed.\n\n"
+
+   return "$retCode"
+}
+
+#-------------------------------------#
+# Added by Martinski W. [2026-Sep-28] #
+#-------------------------------------#
+_CheckCustomSendEmailScript_()
+{
+   if [ ! -s "$SEND_EMAIL_SCRIPT_FPATH" ] || \
+      [ ! -L "$SEND_EMAIL_SYMBLK_FPATH" ]
+   then
+       [ $# -gt 0 ] && shift
+       _InstallCustomSendEmailScript_
+   fi
+   if [ $# -gt 0 ]
+   then
+       if [ "$1" = "-force" ]
+       then $SEND_EMAIL_SYMBLK_FPATH -forceupdate
+       else $SEND_EMAIL_SYMBLK_FPATH -checkupdate
+       fi
+   fi
+
+   if [ -s "$SEND_EMAIL_SCRIPT_FPATH" ] && \
+      [ -L "$SEND_EMAIL_SYMBLK_FPATH" ]
+   then return 0
+   else return 1
+   fi
+}
+
 ##-------------------------------------##
 ## Added by Martinski W. [2026-Sep-12] ##
 ##-------------------------------------##
@@ -2644,16 +2593,14 @@ _CheckEmailConfigFileFromAMTM_()
    fi
 
    # Initialize status first #
-   sendEmail_EnabledFlag=false
+   email_ENABLEDopt=false
+   email_CC_Addr_OK=false
    isEmailConfigEnabledInAMTM=false
 
    # AMTM Email Configuration file variables #
    FROM_NAME=""  TO_NAME=""  FROM_ADDRESS=""  TO_ADDRESS=""
    USERNAME=""  SMTP=""  PORT=""  PROTOCOL=""
    PASSWORD=""  emailPwEnc=""
-
-   # Custom options from Email Library Script #
-   CC_NAME=""  CC_ADDRESS=""
 
    if [ ! -s "$AMTM_Mail_Conf_File" ] || [ ! -s "$AMTM_Mail_Pswd_File" ]
    then
@@ -2674,22 +2621,20 @@ _CheckEmailConfigFileFromAMTM_()
        return 1
    fi
 
-   sendEmail_CC_Name="$(_GetConfigOption_ EMAIL_CC_NAME)"
-   sendEmail_CC_Addr="$(_GetConfigOption_ EMAIL_CC_ADDR)"
-   sendEmail_FormatType="$(_GetConfigOption_ EMAIL_FORMAT_TYPE HTML)"
-   sendEmail_EnabledFlag="$(_GetConfigOption_ EMAIL_SEND_ENABLE false)"
+   email_CC_Name="$(_GetConfigOption_ EMAIL_CC_NAME)"
+   email_CC_Addr="$(_GetConfigOption_ EMAIL_CC_ADDR)"
+   email_FormatType="$(_GetConfigOption_ EMAIL_FORMAT_TYPE HTML)"
+   email_ENABLEDopt="$(_GetConfigOption_ EMAIL_SEND_ENABLE false)"
 
-   if [ "$sendEmail_FormatType" = "HTML" ]
+   if [ "$email_FormatType" = "HTML" ]
    then isEmailFormatTypeHTML=true
    else isEmailFormatTypeHTML=false
    fi
-   cemIsFormatHTML="$isEmailFormatTypeHTML"
 
-   if [ -n "$sendEmail_CC_Name" ] && [ "$sendEmail_CC_Name" != "TBD" ] && \
-      [ -n "$sendEmail_CC_Addr" ] && [ "$sendEmail_CC_Addr" != "TBD" ]
-   then
-       [ -z "$CC_NAME" ] && CC_NAME="$sendEmail_CC_Name"
-       [ -z "$CC_ADDRESS" ] && CC_ADDRESS="$sendEmail_CC_Addr"
+   if [ -n "$email_CC_Name" ] && [ "$email_CC_Name" != "TBD" ] && \
+      [ -n "$email_CC_Addr" ] && [ "$email_CC_Addr" != "TBD" ]
+   then email_CC_Addr_OK=true
+   else email_CC_Addr_OK=false
    fi
 
    isEmailConfigEnabledInAMTM=true
@@ -2704,14 +2649,15 @@ _CheckEmailConfigFileFromAMTM_()
 # ARG2: The full path of file containing the email Body text.
 # ARG3: The email Body Title Line string {OPTIONAL].
 #--------------------------------------------------------------#
-_SendEmail_()
+_SendEmailMsg_()
 {
    local logMsgStr  theMsgStr
 
-   if [ -z "${amtmIsEMailConfigFileEnabled:+xSETx}" ]
+   if [ ! -s "$SEND_EMAIL_SCRIPT_FPATH" ] || \
+      [ ! -L "$SEND_EMAIL_SYMBLK_FPATH" ]
    then
-       logMsgStr="**ERROR**: Shared email library script [$CUSTOM_EMAIL_LIB_SCRIPT_FNAME] is *NOT* loaded."
-       theMsgStr="${REDct}**ERROR**${CLEARct}: ${MAGNTct}Shared email library script [$CUSTOM_EMAIL_LIB_SCRIPT_FNAME] is *NOT* loaded.${CLEARct}"
+       logMsgStr="**ERROR**: The script [$SEND_EMAIL_SCRIPT_FNAME] is *NOT* installed."
+       theMsgStr="${REDct}**ERROR**${CLEARct}: ${MAGNTct}The script [$SEND_EMAIL_SCRIPT_FNAME] is *NOT* installed.${CLEARct}"
        _PrintMsg_ "\n${theMsgStr}\n\n"
        _LogMsg_ "$logMsgStr" "$pLogERROR" NOECHO ; _LogKnock_ "$logMsgStr"
        return 1
@@ -2728,16 +2674,20 @@ _SendEmail_()
        return 1
    fi
 
-   local retCode  showErrorMsgs=false  emailBodyTitleStr=""
+   local retCode  showErrorMsgs=false  emailTitle=""  emailFormat
 
-   ## ONLY for DEBUG/TEST purposes set to 'true' ##
-   cemIsDebugMode=false
+   if [ $# -gt 2 ] && [ -n "$3" ]
+   then emailTitle="$3"
+   fi
 
-   [ $# -gt 2 ] && [ -n "$3" ] && emailBodyTitleStr="$3"
+   if "$isEmailFormatTypeHTML"
+   then emailFormat="-html"
+   else emailFormat="-ptext"
+   fi
 
-   FROM_NAME="$emailSenderID"
-
-   _SendEMailNotification_CEM_ "$1" "-F=$2" "$emailBodyTitleStr"
+   $SEND_EMAIL_SYMBLK_FPATH "$emailFormat" -From="$emailSenderID" "$1" -Body="$2" \
+        ${emailTitle:+-Title="$emailTitle"} \
+        ${email_CC_Addr_OK:+-CCName="$email_CC_Name" -CCEmail="$email_CC_Addr"}
    retCode="$?"
 
    if [ "$retCode" -eq 0 ]
@@ -2750,7 +2700,7 @@ _SendEmail_()
        _LogKnock_ "$logMsgStr"
    fi
 
-   if ! "$cemIsVerboseMode" || "$showErrorMsgs"
+   if "$showErrorMsgs"
    then _PrintMsg_ "\n${theMsgStr}\n"
    fi
    return "$retCode"
@@ -2774,16 +2724,8 @@ _SendKnockEmail_()
 		return 1
 	fi
 
-	if [ ! -s "$CUSTOM_EMAIL_LIB_SCRIPT_FPATH" ]
-	then
-		_AcquireEmailMutexFLock_
-		_CheckCustomEmailLibraryScript_ -check
-		_ReleaseEmailMutexFLock_
-	fi
-
-	. "$CUSTOM_EMAIL_LIB_SCRIPT_FPATH"
-
-	if ! _CheckEmailConfigFileFromAMTM_
+	if ! _CheckCustomSendEmailScript_ || \
+	   ! _CheckEmailConfigFileFromAMTM_
 	then return 1
 	fi
 
@@ -2807,7 +2749,7 @@ _SendKnockEmail_()
        fi
 	} > "$emailBodyFPath"
 
-	_SendEmail_ "$emailSubjectSTR" "$emailBodyFPath" "$emailBodyTITLEx"
+	_SendEmailMsg_ "$emailSubjectSTR" "$emailBodyFPath" "$emailBodyTITLEx"
 	retCode="$?"
 
 	rm -f "$emailBodyFPath"
@@ -2819,16 +2761,8 @@ _SendKnockEmail_()
 #-------------------------------------#
 _SendTestEmail_()
 {
-	if [ ! -s "$CUSTOM_EMAIL_LIB_SCRIPT_FPATH" ]
-	then
-		_AcquireEmailMutexFLock_
-		_CheckCustomEmailLibraryScript_ -check
-		_ReleaseEmailMutexFLock_
-	fi
-
-	. "$CUSTOM_EMAIL_LIB_SCRIPT_FPATH"
-
-	if ! _CheckEmailConfigFileFromAMTM_
+	if ! _CheckCustomSendEmailScript_ || \
+	   ! _CheckEmailConfigFileFromAMTM_
 	then return 1
 	fi
 
@@ -2838,11 +2772,11 @@ _SendTestEmail_()
 	local emailBodyFPath="${tmpEmailBodyFPath}.TEST"
 
 	{
-	   printf "\nThis is a TEST to check and verify if sending email notifications"
+	   printf "\nThis is a <b>TEST</b> to check and verify if sending email notifications"
 	   printf " is working well using the \"<b>${shScriptName}</b>\" script.\n\n"
 	} > "$emailBodyFPath"
 
-	_SendEmail_ "$emailSubjectSTR" "$emailBodyFPath" "$emailBodyTITLEx"
+	_SendEmailMsg_ "$emailSubjectSTR" "$emailBodyFPath" "$emailBodyTITLEx"
 	retCode="$?"
 
 	rm -f "$emailBodyFPath"
@@ -2884,9 +2818,9 @@ _SetConfigOption_()
 	then
 		if printf '%s\n' "$2" | grep -qE '^(true|false)$'
 		then
-			sed -i "s/${1}=.*/${1}=${2}/" "$optConfFile"
+			sed -i "s/^${1}=.*/${1}=${2}/" "$optConfFile"
 		else
-			sed -i "s/${1}=.*/${1}='${newVal}'/" "$optConfFile"
+			sed -i "s/^${1}=.*/${1}='${newVal}'/" "$optConfFile"
 		fi
 	fi
 	return 0
@@ -2968,15 +2902,22 @@ _InvalidMenuOptionHandler_()
 
 # Configuration Settings #
 logKnockEnabled="$(_GetConfigOption_ LOG_KNOCK_ENABLE false)"
-useEntwareScreen="$(_GetConfigOption_ USE_EW_SCREEN false)"
+
+#------------------------------------------------------#
+# The Entware 'screen' utility is NO LONGER SUPPORTED.
+# Remove the var setting from the configuration file.
+#------------------------------------------------------#
+if grep -qE '^USE_EW_SCREEN=.*' "$optConfFile"
+then sed -i '/^USE_EW_SCREEN=.*/d' "$optConfFile"
+fi
 
 #-------------------------------------#
 # Added by Martinski W. [2026-Sep-12] #
 #-------------------------------------#
-sendEmail_CC_Name="$(_GetConfigOption_ EMAIL_CC_NAME)"
-sendEmail_CC_Addr="$(_GetConfigOption_ EMAIL_CC_ADDR)"
-sendEmail_FormatType="$(_GetConfigOption_ EMAIL_FORMAT_TYPE HTML)"
-sendEmail_EnabledFlag="$(_GetConfigOption_ EMAIL_SEND_ENABLE false)"
+email_CC_Name="$(_GetConfigOption_ EMAIL_CC_NAME)"
+email_CC_Addr="$(_GetConfigOption_ EMAIL_CC_ADDR)"
+email_FormatType="$(_GetConfigOption_ EMAIL_FORMAT_TYPE HTML)"
+email_ENABLEDopt="$(_GetConfigOption_ EMAIL_SEND_ENABLE false)"
 
 _InvalidEmailOptionHandler_()
 {
@@ -2987,12 +2928,12 @@ _InvalidEmailOptionHandler_()
 
 _ToggleEmailNotifications_()
 {
-	if ! "$sendEmail_EnabledFlag"
+	if ! "$email_ENABLEDopt"
 	then _SetConfigOption_ EMAIL_SEND_ENABLE true
 	else _SetConfigOption_ EMAIL_SEND_ENABLE false
 	fi
 	configOptsUpdated=true
-	sendEmail_EnabledFlag="$(_GetConfigOption_ EMAIL_SEND_ENABLE false)"
+	email_ENABLEDopt="$(_GetConfigOption_ EMAIL_SEND_ENABLE false)"
 }
 
 _ToggleEmailFormatType_()
@@ -3001,12 +2942,11 @@ _ToggleEmailFormatType_()
 	then _SetConfigOption_ EMAIL_FORMAT_TYPE HTML
 	else _SetConfigOption_ EMAIL_FORMAT_TYPE PlainText
 	fi
-	sendEmail_FormatType="$(_GetConfigOption_ EMAIL_FORMAT_TYPE HTML)"
-	if [ "$sendEmail_FormatType" = "HTML" ]
+	email_FormatType="$(_GetConfigOption_ EMAIL_FORMAT_TYPE HTML)"
+	if [ "$email_FormatType" = "HTML" ]
 	then isEmailFormatTypeHTML=true
 	else isEmailFormatTypeHTML=false
 	fi
-	cemIsFormatHTML="$isEmailFormatTypeHTML"
 }
 
 #-------------------------------------#
@@ -3097,8 +3037,8 @@ _SetSecondaryEmailAddress_()
    if "$doClearSetting" || \
       { [ -z "$nextCC_AddrOpt" ] && [ -n "$currCC_AddrOpt" ] ; }
    then
-       _SetConfigOption_ EMAIL_CC_NAME 'TBD'
-       _SetConfigOption_ EMAIL_CC_ADDR 'TBD'
+       _SetConfigOption_ EMAIL_CC_NAME TBD
+       _SetConfigOption_ EMAIL_CC_ADDR TBD
        printf "\nThe secondary email address and associated name/alias were removed successfully.\n"
        _PressAnyKey_
        return 0
@@ -3200,7 +3140,7 @@ _AdditionalOptionsMenu_()
 		printf "\n ${numberCT} 2${CLEARct}.${optionCT}Toggle email notifications for port knocks ${CLEARct}\n"
         if "$isEmailConfigEnabledInAMTM"
         then
-            if "$sendEmail_EnabledFlag"
+            if "$email_ENABLEDopt"
             then statusSTR="${GREENct}ENABLED"
             else statusSTR="${REDct}DISABLED"
             fi
@@ -3220,16 +3160,16 @@ _AdditionalOptionsMenu_()
         printf "\n ${numberCT} 4${CLEARct}.${optionCT}Set email secondary address ${CLEARct}\n"
         if "$isEmailConfigEnabledInAMTM"
         then
-            if [ -n "$CC_NAME" ] && [ -n "$CC_ADDRESS" ]
+            if "$email_CC_Addr_OK"
             then
-			    printf "     [Current Name/Alias: ${GREENct}%s${CLEARct}]\n" "$CC_NAME"
-			    printf "     [Current 2nd Address: ${GREENct}%s${CLEARct}]\n" "$CC_ADDRESS"
+			    printf "     [Current Name/Alias: ${GREENct}%s${CLEARct}]\n" "$email_CC_Name"
+			    printf "     [Current 2nd Address: ${GREENct}%s${CLEARct}]\n" "$email_CC_Addr"
             else
 			    printf "     [Currently ${YELLWct}NONE${CLEARct}]\n"
             fi
         fi
 
-        if "$sendEmail_EnabledFlag"
+        if "$email_ENABLEDopt"
         then numberCT="$GREENct" ; optionCT=' '
         else numberCT="$GRAYEDct" ; optionCT="$GRAYEDct "
         fi
@@ -3265,7 +3205,7 @@ _AdditionalOptionsMenu_()
 				fi
 				;;
 			5)
-				if "$sendEmail_EnabledFlag"
+				if "$email_ENABLEDopt"
 				then
                     _SendTestEmail_
 				else
@@ -3345,9 +3285,9 @@ then
 					fi
 					rm -f "$savedConfig"
 				fi
-				printf "\nKnock.sh version $REV successfully installed!\n\n"
+				printf "\nKnock.sh version ${GREENct}${REV}${CLEARct} was successfully installed!\n"
 
-				if PromptYN "Would you like to edit the config file now ($configFPath)? (y/n):"
+				if PromptYN "\nWould you like to edit the config file now ($configFPath)? (y/n):"
 				then
 					echo
 					$shScriptFile -edit -nobanner
@@ -3532,7 +3472,7 @@ _Read_dmesgToKnockLogFile_()
 _CheckKnockWaitTimer_()
 {
     if [ $# -eq 0 ] || [ -z "$1" ] ; then return 1 ; fi
-    if top -bn1 | grep -qE "/${knockWaitTimerName}_${1}.sh[ ]+"
+    if top -bn1 | grep -qE "[/]${knockWaitTimerName}_${1}.sh[ ]+"
     then return 0
     else return 1
     fi
@@ -3542,7 +3482,7 @@ _StopKnockWaitTimer_()
 {
     if [ $# -eq 0 ] || [ -z "$1" ] ; then return 1 ; fi
     local waitPID
-    waitPID="$(top -bn1 | grep -E "/${knockWaitTimerName}_${1}.sh[ ]+")"
+    waitPID="$(top -bn1 | grep -E "[/]${knockWaitTimerName}_${1}.sh[ ]+")"
     [ -z "$waitPID" ] && return 0
     waitPID="$(echo "$waitPID" | awk -F' ' '{print $1}')"
     kill -TERM "$waitPID" >/dev/null 2>&1
@@ -3718,31 +3658,17 @@ fi
 #----------------------------------------#
 # Modified by Martinski W. [2026-Jun-09] #
 #----------------------------------------#
+#------------------------------------------------------#
+# The Entware 'screen' utility is NO LONGER SUPPORTED.
+# Inform users here if they still continue to use it.
+#------------------------------------------------------#
 if [ "$1" = "-screen" ]
 then
-	if [ ! -x /opt/sbin/screen ]
-	then
-		_LogMsg_ "**ERROR**: Entware Screen is NOT installed" "$pLogERROR"
-		exit 1
-	fi
-	if [ ! -s "$shScriptFile" ]
-	then
-		_LogMsg_ "**ERROR**: $shScriptName is NOT installed yet" "$pLogERROR"
-		exit 1
-	fi
-
-	logMsg="Starting $shScriptName background process"
-	_LogMsg_ "$logMsg" "$pLogWARNG" NOECHO ; _LogKnock_ "$logMsg"
-
-	#Stop any current rogue background process#
+	[ ! -x /opt/sbin/screen ] && exit 1
+	#Stop any possible rogue 'screen' process#
 	_CheckAndStopBackground_ScreenProcess_
-	_CheckAndStopBackground_DaemonProcess_
-
-	printf "Waiting for background process. Please wait...\n"
-	_StartBackground_ScreenProcess_ 5
-
-	_WaitForCustomFirewallRules_ 5
-	CheckStatus && exit 0 || exit 1
+	_LogMsg_ "**ERROR**: The Entware 'screen' utility is NO longer supported" "$pLogERROR"
+	exit 1
 fi
 
 #----------------------------------------#
@@ -3753,177 +3679,6 @@ then
 	_CreateCustomFirewallRules_
 	exit 0
 fi
-
-#-------------------------------------#
-# Added by Martinski W. [2026-Sep-12] #
-#-------------------------------------#
-_DownloadCustomEmailLibraryScript_()
-{
-   if [ $# -eq 0 ] || [ -z "$1" ] || \
-      ! echo "$1" | grep -qE '^-(update|install|force)$'
-   then
-       _PrintMsg_ "\n${REDct}**ERROR**${CLEARct}: NO valid parameter was provided to download library file.\n"
-       return 1
-   fi
-
-   mkdir -m 755 -p "$ADDONS_SHARED_LIBS_DIR_PATH"
-   if [ ! -d "$ADDONS_SHARED_LIBS_DIR_PATH" ]
-   then
-       _PrintMsg_ "\n${REDct}**ERROR**${CLEARct}: Directory Path [$ADDONS_SHARED_LIBS_DIR_PATH] *NOT* found.\n"
-       return 1
-   fi
-
-   local actionStr1  actionStr2  retCode  urlDLcount  urlDLmax
-   local isVerboseMode="$cemIsVerboseMode"  updateType  theVerStr
-
-   case "$1" in
-       -force)
-           updateType="force"
-           actionStr1="Updating"
-           actionStr2="updated to the latest version"
-           ;;
-       -update)
-           updateType="check"
-           actionStr1="Updating"
-           actionStr2="updated to the latest version"
-           ;;
-       -install)
-           updateType="check"
-           actionStr1="Installing"
-           actionStr2="installed, version"
-           ;;
-   esac
-
-   [ "$updateType" = "check" ] && "$isVerboseMode" && \
-   _PrintMsg_ "\n${actionStr1} the shared email library script to support email notifications...\n"
-
-   retCode=1 ; urlDLcount=0 ; urlDLmax=2
-   for theScriptURL in "$EMAIL_LIB_GH_URL1" "$EMAIL_LIB_GH_URL2"
-   do
-       urlDLcount="$((urlDLcount + 1))"
-       if _DownloadFileFromRepo_ "$theScriptURL" "$CUSTOM_EMAIL_LIB_SCRIPT_FNAME" "$CUSTOM_EMAIL_LIB_SCRIPT_FPATH" "$urlDLcount"
-       then
-           . "$CUSTOM_EMAIL_LIB_SCRIPT_FPATH"
-           chmod 755 "$CUSTOM_EMAIL_LIB_SCRIPT_FPATH"
-
-           if [ "$updateType" = "force" ] || "$isVerboseMode" || [ "$urlDLcount" -gt 1 ]
-           then
-               [ "$urlDLcount" -gt 1 ] && echo
-               theVerStr="${GREENct}${CEM_LIB_VERSION}${CLEARct} [${GREENct}${CEM_LIB_VERSTAG}${CLEARct}]"
-               _PrintMsg_ "The shared email library script ${GREENct}${CUSTOM_EMAIL_LIB_SCRIPT_FNAME}${CLEARct} was ${actionStr2} ${theVerStr}.\n\n"
-           fi
-           retCode=0
-           break
-       fi
-   done
-
-   if [ "$retCode" -ne 0 ]
-   then
-       _PrintMsg_ "The shared email library script ${REDct}${CUSTOM_EMAIL_LIB_SCRIPT_FNAME}${CLEARct} was NOT ${actionStr2}.\n\n"
-   fi
-   return "$retCode"
-}
-
-#-------------------------------------#
-# Added by Martinski W. [2026-Sep-12] #
-#-------------------------------------#
-_CheckCustomEmailLibraryScript_()
-{
-   local retCode=0
-   local doDL_LibScriptMsge=""
-   local doDL_LibScriptFlag=false
-
-   if [ ! -s "$CUSTOM_EMAIL_LIB_SCRIPT_FPATH" ]
-   then
-       cemIsVerboseMode=true
-       _DownloadCustomEmailLibraryScript_ -install
-       return "$?"
-   fi
-
-   . "$CUSTOM_EMAIL_LIB_SCRIPT_FPATH"
-
-   if [ $# -gt 0 ] && [ "$1" = "-force" ]
-   then
-       retCode=1
-       _DoReInit_CEM_
-       doDL_LibScriptFlag=true
-       doDL_LibScriptMsge="-force"
-   else
-       if [ -z "${CEM_LIB_VERSION:+xSETx}" ] || \
-          _CheckLibraryUpdates_CEM_ "$ADDONS_SHARED_LIBS_DIR_PATH"
-       then
-           retCode=1
-           doDL_LibScriptFlag=true
-           doDL_LibScriptMsge="-update"
-       fi
-   fi
-
-   if "$doDL_LibScriptFlag"
-   then
-       _DownloadCustomEmailLibraryScript_ "$doDL_LibScriptMsge"
-       retCode="$?"
-   fi
-   return "$retCode"
-}
-
-#----------------------------------------#
-# Modified by Martinski W. [2026-Jun-07] #
-#----------------------------------------#
-_CheckForEntwareScreen_()
-{
-	printf "\tChecking for Entware..."
-	if [ ! -x /opt/bin/opkg ]
-	then
-		printf "\n**ERROR**: Entware NOT found. Please install Entware using the 'amtm' utility.\n"
-		return 1
-	fi
-	echo -e "$cm"
-
-	printf "\tChecking for Screen utility..."
-	if [ ! -x /opt/sbin/screen ]
-	then
-		if PromptYN "\n\nConfirm installing 'screen' utility? (y/n):"
-		then
-			echo
-			/opt/bin/opkg install screen
-			if [ ! -x /opt/sbin/screen ]
-			then
-				printf "\n**ERROR**: Entware screen installation failed\n\n"
-				return 1
-			fi
-		else
-			printf "\nCancelling installation\n\n"
-			return 1
-		fi
-		printf "\tScreen successfully installed."
-	fi
-	echo -e "$cm"
-	return 0
-}
-
-#----------------------------------------#
-# Modified by Martinski W. [2026-Jun-06] #
-#----------------------------------------#
-_SetUpUSB_PostMount_()
-{
-	# Clean up services-start #
-	if [ -s "$servicesStart" ] && \
-	   grep -q "$shScriptFile" "$servicesStart"
-	then
-		sed -i -e "\\~${shScriptFile}~d" "$servicesStart"
-	fi
-
-	echo -ne "\tUpdating post-mount file..."
-	if [ ! -s "$usbPostMount" ]
-	then
-		echo "#!/bin/sh" > "$usbPostMount"
-		echo >> "$usbPostMount"
-	fi
-	sed -i -e "\\~${shScriptFile}~d" "$usbPostMount"
-	echo "(sleep 30 && $shScriptFile -screen) &  #Added by $shScriptName#" >> "$usbPostMount"
-	chmod 755 "$usbPostMount"
-	echo -e "$cm"
-}
 
 #-------------------------------------#
 # Added by Martinski W. [2026-Jun-06] #
@@ -3946,7 +3701,7 @@ _SetUpServicesStart_()
 	sed -i -e "\\~${shScriptFile}~d" "$servicesStart"
 	echo "(sleep 30 && $shScriptFile -daemon) &  #Added by $shScriptName#" >> "$servicesStart"
 	chmod 755 "$servicesStart"
-	echo -e "$cm"
+	printf "${cm}\n"
 }
 
 #-------------------------------------#
@@ -3999,6 +3754,11 @@ then
 		printf "\nInstalling ${shScriptName}...\n"
 	fi
 
+	if [ $# -gt 1 ] && [ "$2" = "-force" ] 
+	then updateType='-force'
+	else updateType='-check'
+	fi
+
 	if ! _CheckInstallationRequirements_
 	then exit 1
 	fi
@@ -4006,44 +3766,6 @@ then
 	mkdir -p "$INSTALL_DIR"
 	chmod 755 "$shScriptFile"
 	echo
-
-	# The shared custom email library script #
-    if [ $# -gt 1 ] && [ "$2" = "-force" ] 
-    then updateType="-force"
-    else updateType="-check"
-    fi
-	_AcquireEmailMutexFLock_
-	_CheckCustomEmailLibraryScript_ "$updateType"
-	_ReleaseEmailMutexFLock_
-
-	#-------------------------------------------#
-	# Phasing out screen, Remove install prompt #
-	#-------------------------------------------#
-	##OFF## if [ -x /opt/bin/opkg ] && [ -x /opt/sbin/screen ]
-	##OFF## then action="use"
-	##OFF## else action="install"
-	##OFF## fi
-	##OFF##
-	##OFF## if [ $# -lt 2 ] || [ -z "$2" ] || [ "$2" = "-menu" ]
-	##OFF## then
-	##OFF##     printf "\nYou have the option to install/use the Entware 'screen' utility.\n"
-	##OFF##     printf "It will replace the built-in background process used by the script.\n"
-	##OFF##     if PromptYN "Would you like to $action the optional Entware 'screen' utility? (y/n):"
-	##OFF##     then useEntwareScreen=true
-	##OFF##     else useEntwareScreen=false
-	##OFF##     fi
-	##OFF## else
-	##OFF##     useEntwareScreen="$(_GetConfigOption_ USE_EW_SCREEN false)"
-	##OFF## fi
-
-	if "$useEntwareScreen"
-	then
-		if _CheckForEntwareScreen_
-		then useEntwareScreen=true
-		else useEntwareScreen=false
-		fi
-	fi
-	_SetConfigOption_ USE_EW_SCREEN "$useEntwareScreen"
 
 	# Set up configuration file #
 	if [ ! -s "$configFPath" ]
@@ -4071,7 +3793,7 @@ then
 44449,44410 br0 /jffs/scripts/doubleKnock.sh
 
 EOF
-		echo -e "$cm"
+		printf "${cm}\n"
 
 		if [ $# -lt 2 ] || [ -z "$2" ]
 		then
@@ -4091,16 +3813,11 @@ EOF
 		fi
 	else
 		echo -ne "\tFound configuration file..."
-		echo -e "$cm"
+		printf "${cm}\n"
 	fi
 	chmod 644 "$configFPath"
 
-	if "$useEntwareScreen"
-	then
-		_SetUpUSB_PostMount_
-	else
-		_SetUpServicesStart_
-	fi
+	_SetUpServicesStart_
 
 	# Set up firewall-start #
 	echo -ne "\tUpdating firewall-start file..."
@@ -4112,7 +3829,7 @@ EOF
 	sed -i -e "\\~${shScriptFile}~d" "$firewallStart"
 	echo "$shScriptFile -firewall  #Added by $shScriptName#" >> "$firewallStart"
 	chmod 755 "$firewallStart"
-	echo -e "$cm"
+	printf "${cm}\n"
 
 	# Set up profile.add #
 	echo -ne "\tUpdating profile.add file..."
@@ -4123,13 +3840,15 @@ EOF
 	sed -i -e "\\~${shScriptFile}~d" "$profileAdd"
 	echo "alias knock=\"sh $shScriptFile\"  #Added by $shScriptName#" >> "$profileAdd"
 	chmod 644 "$profileAdd"
-	echo -e "$cm"
+	printf "${cm}\n"
+
+	_CheckCustomSendEmailScript_ "$updateType"
 
 	if [ $# -lt 2 ] || [ -z "$2" ]
 	then
-		printf "\nKnock.sh version $REV successfully installed!\n\n"
+		printf "\nKnock.sh version ${GREENct}${REV}${CLEARct} was successfully installed!\n"
 
-		if PromptYN "Would you like to edit the config file now [$configFPath]? (y/n):"
+		if PromptYN "\nWould you like to edit the config file now [$configFPath]? (y/n):"
 		then
 			echo
 			$shScriptFile -edit -nobanner
@@ -4316,7 +4035,7 @@ fi
 
 if [ "$1" = "-email" ]
 then
-    if ! "$sendEmail_EnabledFlag"
+    if ! "$email_ENABLEDopt"
 	then return 1
 	fi
 	shift ; _SendKnockEmail_ "$@"
@@ -4464,10 +4183,7 @@ if ! _AcquireMutexFLock_
 then exit 1
 fi
 
-if ! "$useEntwareScreen"
-then trap '' HUP
-fi
-
+trap '' HUP
 rm -f "$knockLoopDaemonSEM"
 
 if [ ! -f "$dmesgKnockLogFILE" ]

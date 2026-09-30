@@ -1,8 +1,8 @@
 # Knock
 Knock: Router commands for non-admin users
 
-## v3.1.1
-### Updated on 2026-Sep-27
+## v3.2.0
+### Updated on 2026-Sep-30
 
 ## Installation
 ssh into your router and enter the following command:
