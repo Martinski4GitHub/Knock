@@ -44,7 +44,7 @@
 #Developed by Rung and Martinski
 #
 #-----------------------------------------------------------------------
-# Last Updated: 2026-Sep-30
+# Last Updated: 2026-Oct-01
 ########################################################################
 
 #Update Log:
@@ -99,7 +99,7 @@ set -u
 
 readonly version=3.2.0
 readonly REV="$version"
-readonly VERS_TAG="Beta_26093000"
+readonly VERS_TAG="Beta_26100100"
 readonly INTERVAL=5
 readonly MIN_KNOCK_PORT=1024  #Avoid well-known RESERVED ports#
 readonly MULTI_PORT_KNOCK_WAIT=30
@@ -254,7 +254,7 @@ readonly curlErrLogFile="${TEMP_DIR}/tmpCurl_${scriptFNameTag}_$$.ERR.LOG"
 unset LD_LIBRARY_PATH
 [ "$HOME" != "/root" ] && export HOME="/root"
 
-readonly emailSenderID="Knock"
+readonly emailSenderID="Port Knock"
 readonly tmpEmailBodyFPath="${TEMP_DIR}/tmpEMailBody_${scriptFNameTag}_$$.TMP"
 
 # User-configurable email settings #
@@ -2647,7 +2647,7 @@ _CheckEmailConfigFileFromAMTM_()
 #--------------------------------------------------------------#
 # ARG1: The email Subject Line string.
 # ARG2: The full path of file containing the email Body text.
-# ARG3: The email Body Title Line string {OPTIONAL].
+# ARG3: The email Body Title Line string.
 #--------------------------------------------------------------#
 _SendEmailMsg_()
 {
@@ -2663,7 +2663,7 @@ _SendEmailMsg_()
        return 1
    fi
 
-   if [ $# -lt 2 ] || [ -z "$1" ] || [ -z "$2" ]
+   if [ $# -lt 3 ] || [ -z "$1" ] || [ -z "$2" ] || [ -z "$3" ]
    then
        _PrintMsg_ "\n${REDct}**ERROR**${CLEARct}: INSUFFICIENT email parameters\n"
        return 1
@@ -2674,11 +2674,7 @@ _SendEmailMsg_()
        return 1
    fi
 
-   local retCode  showErrorMsgs=false  emailTitle=""  emailFormat
-
-   if [ $# -gt 2 ] && [ -n "$3" ]
-   then emailTitle="$3"
-   fi
+   local retCode  showErrorMsgs=false  emailFormat
 
    if "$isEmailFormatTypeHTML"
    then emailFormat="-html"
@@ -2686,8 +2682,7 @@ _SendEmailMsg_()
    fi
 
    $SEND_EMAIL_SYMBLK_FPATH "$emailFormat" -From="$emailSenderID" "$1" -Body="$2" \
-        ${emailTitle:+-Title="$emailTitle"} \
-        ${email_CC_Addr_OK:+-CCName="$email_CC_Name" -CCEmail="$email_CC_Addr"}
+         -Title="$3" ${email_CC_Addr_OK:+-CCName="$email_CC_Name" -CCEmail="$email_CC_Addr"}
    retCode="$?"
 
    if [ "$retCode" -eq 0 ]
@@ -2772,8 +2767,8 @@ _SendTestEmail_()
 	local emailBodyFPath="${tmpEmailBodyFPath}.TEST"
 
 	{
-	   printf "\nThis is a <b>TEST</b> to check and verify if sending email notifications"
-	   printf " is working well using the \"<b>${shScriptName}</b>\" script.\n\n"
+	   printf "\nThis is a <b>TEST</b> to check and verify if sending email notifications from"
+	   printf " the \"<b>${shScriptName}</b>\" script is working well as currently configured.\n\n"
 	} > "$emailBodyFPath"
 
 	_SendEmailMsg_ "$emailSubjectSTR" "$emailBodyFPath" "$emailBodyTITLEx"
@@ -2810,13 +2805,18 @@ _SetConfigOption_()
 
 	if ! grep -qE "^${1}=.*" "$optConfFile"
 	then
-		if printf '%s\n' "$2" | grep -qE '^(true|false)$'
+		if [ "$2" = 'TBD' ]
+		then echo "${1}=''" >> "$optConfFile"
+		elif printf '%s\n' "$2" | grep -qE '^(true|false)$'
 		then echo "${1}=${2}" >> "$optConfFile"
 		else echo "${1}='${2}'" >> "$optConfFile"
 		fi
 	elif ! grep -qE "^${1}=$newVal" "$optConfFile"
 	then
-		if printf '%s\n' "$2" | grep -qE '^(true|false)$'
+		if [ "$2" = 'TBD' ]
+		then
+			sed -i "s/^${1}=.*/${1}=''/" "$optConfFile"
+		elif printf '%s\n' "$2" | grep -qE '^(true|false)$'
 		then
 			sed -i "s/^${1}=.*/${1}=${2}/" "$optConfFile"
 		else
@@ -2834,7 +2834,7 @@ _GetConfigOption_()
 	if [ $# -eq 0 ] || [ -z "$1" ]
 	then echo ; return 1
 	fi
-	local keyPair  defValue=""
+	local keyPair  keyValue  defValue=""
 
 	if [ $# -gt 1 ] && [ -n "$2" ]
 	then defValue="$2"
@@ -2858,7 +2858,9 @@ _GetConfigOption_()
 		fi
 		echo "$defValue"
 	else
-		echo "$keyPair" | cut -d'=' -f2- | sed "s/['\"]//g"
+		keyValue="$(echo "$keyPair" | cut -d'=' -f2- | sed "s/['\"]//g")"
+		[ "$keyValue" = 'TBD' ] && keyValue=''
+		printf '%s\n' "$keyValue"
 	fi
 	return 0
 }
