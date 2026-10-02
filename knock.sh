@@ -99,7 +99,7 @@ set -u
 
 readonly version=3.2.0
 readonly REV="$version"
-readonly VERS_TAG="Beta_26100100"
+readonly VERS_TAG="Beta_26100120"
 readonly INTERVAL=5
 readonly MIN_KNOCK_PORT=1024  #Avoid well-known RESERVED ports#
 readonly MULTI_PORT_KNOCK_WAIT=30
@@ -254,7 +254,7 @@ readonly curlErrLogFile="${TEMP_DIR}/tmpCurl_${scriptFNameTag}_$$.ERR.LOG"
 unset LD_LIBRARY_PATH
 [ "$HOME" != "/root" ] && export HOME="/root"
 
-readonly emailSenderID="Port Knock"
+readonly emailSenderID="Knock"
 readonly tmpEmailBodyFPath="${TEMP_DIR}/tmpEMailBody_${scriptFNameTag}_$$.TMP"
 
 # User-configurable email settings #
@@ -2529,7 +2529,7 @@ _StopBackgroundProcess_()
 #-------------------------------------#
 _InstallCustomSendEmailScript_()
 {
-   local retCode  urlDLcount  urlDLmax  theVerStr
+   local retCode  urlDLcount  urlDLmax
    local tempScriptPathDL="${TEMP_DIR}/${SEND_EMAIL_SCRIPT_FNAME}.DL.$$.SH"
 
    _PrintMsg_ "\nInstalling the ${GREENct}${SEND_EMAIL_SCRIPT_TNAME}${CLEARct} script to handle email notifications..."
@@ -2730,7 +2730,7 @@ _SendKnockEmail_()
 	local emailBodyFPath="${tmpEmailBodyFPath}.SEND"
 
 	{
-	   printf "\nA Port Knock was detected and its associated command was executed.\n"
+	   printf "\nThe \"<b>${shScriptName}</b>\" script detected a port knock, and its associated command was executed.\n"
 	   printf "\nInterface ID: <b>${1}</b>"
 	   printf "\nSource IPv4 Address: <b>${2}</b>\n"
 
