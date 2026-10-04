@@ -44,7 +44,7 @@
 #Developed by Rung and Martinski
 #
 #-----------------------------------------------------------------------
-# Last Updated: 2026-Oct-01
+# Last Updated: 2026-Oct-03
 ########################################################################
 
 #Update Log:
@@ -99,7 +99,7 @@ set -u
 
 readonly version=3.2.0
 readonly REV="$version"
-readonly VERS_TAG="Beta_26100120"
+readonly VERS_TAG="Beta_26100323"
 readonly INTERVAL=5
 readonly MIN_KNOCK_PORT=1024  #Avoid well-known RESERVED ports#
 readonly MULTI_PORT_KNOCK_WAIT=30
@@ -229,7 +229,7 @@ readonly AMTM_Mail_Conf_File="${AMTM_Mail_Dir_Path}/email.conf"
 readonly AMTM_Mail_Pswd_File="${AMTM_Mail_Dir_Path}/emailpw.enc"
 
 # The custom SendEmail Script to handle email notifications #
-readonly SEND_EMAIL_BRANCH="develop"   ##**TBD** SET TO "master" FOR RELEASE**##
+readonly SEND_EMAIL_BRANCH="master"
 readonly SEND_EMAIL_URL_BASE2="https://raw.githubusercontent.com/MartinSkyW"
 readonly SEND_EMAIL_URL_BASE1="https://raw.githubusercontent.com/Martinski4GitHub"
 readonly SEND_EMAIL_REPO_URL1="${SEND_EMAIL_URL_BASE1}/SendEmail/$SEND_EMAIL_BRANCH"
