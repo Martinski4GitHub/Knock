@@ -44,7 +44,7 @@
 #Developed by Rung and Martinski
 #
 #-----------------------------------------------------------------------
-# Last Updated: 2026-Oct-03
+# Last Updated: 2026-Oct-04
 ########################################################################
 
 #Update Log:
@@ -99,7 +99,7 @@ set -u
 
 readonly version=3.2.0
 readonly REV="$version"
-readonly VERS_TAG="Beta_26100323"
+readonly VERS_TAG="Beta_26100407"
 readonly INTERVAL=5
 readonly MIN_KNOCK_PORT=1024  #Avoid well-known RESERVED ports#
 readonly MULTI_PORT_KNOCK_WAIT=30
@@ -2680,6 +2680,7 @@ _SendEmailMsg_()
    then emailFormat="-html"
    else emailFormat="-ptext"
    fi
+   [ "$email_CC_Addr_OK" = "false" ] && email_CC_Addr_OK=""
 
    $SEND_EMAIL_SYMBLK_FPATH "$emailFormat" -From="$emailSenderID" "$1" -Body="$2" \
          -Title="$3" ${email_CC_Addr_OK:+-CCName="$email_CC_Name" -CCEmail="$email_CC_Addr"}
