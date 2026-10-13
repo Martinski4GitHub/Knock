@@ -117,9 +117,21 @@ Users are free to completely ignore those additional arguments or use them as th
 
 ## Entware is **not** required
 
-The script no longer requires Entware to be installed. Installing and using the Entware 'screen' utility is now completely deprecated. Instead, the script creates a built-in background process running as a daemon. This means the Knock script no longer has any dependencies on Entware being installed or the router having a USB-attached drive available.
+The Knock script no longer requires Entware to be installed. Installing and using the Entware 'screen' utility is now completely deprecated. Instead, the script creates a built-in background process running as a daemon. This means the script no longer has any dependencies on Entware being installed or the router having a USB-attached drive available.
 
 
+###
+## Main Menu
+
+![CLI Main Menu](./Images/Knock_CLI_MainMenu.jpg)
+
+###
+## Additional Configuration Options Menu
+
+![CLI Email Options Menu](./Images/Knock_CLI_ConfigOptionsMenu.jpg)
+
+
+###
 ## Example Use Cases
 
 1. Allow a user on local LAN, using the WireGuard server, or Tailscale server to wake up a specific PC
@@ -150,23 +162,15 @@ The user now executes this command with http://192.168.50.1:44444, for example
     44447 br0 /jffs/scripts/disable-example.sh
 ```
 
-
-###
-## Main Menu
-
-![CLI Main Menu](./Images/Knock_CLI_MainMenu.jpg)
-
-###
-## Additional Configuration Options Menu
-
-![CLI Email Options Menu](./Images/Knock_CLI_ConfigOptionsMenu.jpg)
-
-
-Other use case possibilities from @Victor Jaep include:
+Other use case possibilities may include:
 
 1. Kick off a backup -- like using "sh /jffs/scripts/backupmon.sh -backup"
 2. Turn lights on and off with JGrana's huetil and uKasa apps
 3. Initiate a WAN failover with the wan_failover script
+4. Enable the SSH server over the WAN interface, but only when necessary, and then disabling it when done.
+5. Enable WireGuard or OpenVPN Server over the WAN interface when needed, and then disabling it when done.
+6. Enable/disable already-preconfigured forwarding ports over the WAN interface when needed
+7. Remotely trigger a router rebot over the WAN interface, for when the router seem to be unresponsive
 
 ## Acknowledgments
 The latest 3.0.0 release version was a collaborative effort between @Rung and @Martinski.
