@@ -81,7 +81,7 @@ When sending a Multi-Port Knock sequence, each successive knock in the combinati
 
 ## Email Notifications for Port Knocks
 
-You have the option to enable email notifications for every port knock that's successfully detected and triggers execution of its associated command. This feature can be enabled via the "**Additional Options**" menu.
+You have the option to enable email notifications for every port knock that's successfully detected and triggers execution of its associated command. This feature can be enabled via the "**Additional Options**" submenu.
 
 Before enabling the "Email Notifications" option, users must have already configured their personal email settings via the AMTM 'em) Email settings' option.
     
@@ -89,9 +89,10 @@ Users can select the email format type: **HTML** or **Plain Text**.
     
 A secondary email address can be set up to receive email notifications in addition to the primary recipient.
 
-The Knock script downloads, installs and updates the **SendEmail** tool to handle all email notifications.
+The Knock script downloads, installs and updates the [**SendEmail**](https://github.com/Martinski4GitHub/SendEmail "Go to SendEmail repository") tool to handle all email notifications.
 
 
+##
 ## Additional Arguments in the Port Knock Command Execution
 
 For any script located in the **/jffs/scripts/** directory that gets executed via the command field of a port knock configuration line, **three** additional arguments are passed:
@@ -162,15 +163,15 @@ The user now executes this command with http://192.168.50.1:44444, for example
     44447 br0 /jffs/scripts/disable-example.sh
 ```
 
-Other use case possibilities may include:
+Other possible use-case scenarios may include:
 
-1. Kick off a backup -- like using "sh /jffs/scripts/backupmon.sh -backup"
+1. Kick off a router backup, e.g. using "sh /jffs/scripts/backupmon.sh -backup"
 2. Turn lights on and off with JGrana's huetil and uKasa apps
 3. Initiate a WAN failover with the wan_failover script
-4. Enable the SSH server over the WAN interface, but only when necessary, and then disabling it when done.
-5. Enable WireGuard or OpenVPN Server over the WAN interface when needed, and then disabling it when done.
+4. Enable the SSH server over the WAN interface, but only when necessary, and disable it later when done.
+5. Enable WireGuard or OpenVPN Server over the WAN interface when needed, and disable it later when done.
 6. Enable/disable already-preconfigured forwarding ports over the WAN interface when needed
-7. Remotely trigger a router rebot over the WAN interface, for when the router seem to be unresponsive
+7. Trigger a remote router reboot over the WAN interface when the router becomes otherwise unresponsive
 
 ## Acknowledgments
 The latest 3.0.0 release version was a collaborative effort between @Rung and @Martinski.
