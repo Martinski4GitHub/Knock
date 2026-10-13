@@ -89,9 +89,10 @@ Users can select the email format type: **HTML** or **Plain Text**.
     
 A secondary email address can be set up to receive email notifications in addition to the primary recipient.
 
-The Knock script downloads, installs and updates the **SendEmail** tool to handle all email notifications.
+The Knock script downloads, installs and updates the [**SendEmail**](https://github.com/Martinski4GitHub/SendEmail "Go to SendEmail repo") tool to handle all email notifications.
 
 
+##
 ## Additional Arguments in the Port Knock Command Execution
 
 For any script located in the **/jffs/scripts/** directory that gets executed via the command field of a port knock configuration line, **three** additional arguments are passed:
