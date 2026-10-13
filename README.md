@@ -163,9 +163,9 @@ The user now executes this command with http://192.168.50.1:44444, for example
     44447 br0 /jffs/scripts/disable-example.sh
 ```
 
-Other use case possibilities may include:
+Other possible use-case scenarios may include:
 
-1. Kick off a backup -- like using "sh /jffs/scripts/backupmon.sh -backup"
+1. Kick off a router backup, e.g. using "sh /jffs/scripts/backupmon.sh -backup"
 2. Turn lights on and off with JGrana's huetil and uKasa apps
 3. Initiate a WAN failover with the wan_failover script
 4. Enable the SSH server over the WAN interface, but only when necessary, and disable it later when done.
