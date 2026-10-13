@@ -2,7 +2,7 @@
 Knock: Router commands for non-admin users
 
 ## v3.2.0
-### Updated on 2026-Oct-04
+### Updated on 2026-Oct-12
 
 ## Installation
 ssh into your router and enter the following command:
@@ -79,6 +79,19 @@ Note that each Port Knock rule is expected to use unique port numbers; otherwise
 When sending a Multi-Port Knock sequence, each successive knock in the combination must be separated from the previous knock by at least **8** seconds, but no more than **22** seconds.
 
 
+## Email Notifications for Port Knocks
+
+You have the option to enable email notifications for every port knock that's successfully detected and triggers execution of its associated command. This feature can be enabled via the "**Additional Options**" menu.
+
+Before enabling the "Email Notifications" option, users must have already configured their personal email settings via the AMTM 'em) Email settings' option.
+    
+Users can select the email format type: **HTML** or **Plain Text**.
+    
+A secondary email address can be set up to receive email notifications in addition to the primary recipient.
+
+The Knock script downloads, installs and updates the **SendEmail** tool to handle all email notifications.
+
+
 ## Additional Arguments in the Port Knock Command Execution
 
 For any script located in the **/jffs/scripts/** directory that gets executed via the command field of a port knock configuration line, **three** additional arguments are passed:
@@ -104,7 +117,7 @@ Users are free to completely ignore those additional arguments or use them as th
 
 ## Entware is **not** required
 
-The script no longer requires Entware to be installed. Installing and using the Entware 'screen' utility is now completely optional. Instead, the script creates a built-in background process running as a daemon.
+The script no longer requires Entware to be installed. Installing and using the Entware 'screen' utility is now completely deprecated. Instead, the script creates a built-in background process running as a daemon. This means the Knock script no longer has any dependencies on Entware being installed or the router having a USB-attached drive available.
 
 
 ## Example Use Cases
@@ -136,6 +149,18 @@ The user now executes this command with http://192.168.50.1:44444, for example
 ```sh
     44447 br0 /jffs/scripts/disable-example.sh
 ```
+
+
+###
+## Main Menu
+
+![CLI Main Menu](./Images/Knock_CLI_MainMenu.jpg)
+
+###
+## Additional Configuration Options Menu
+
+![CLI Email Options Menu](./Images/Knock_CLI_ConfigOptionsMenu.jpg)
+
 
 Other use case possibilities from @Victor Jaep include:
 
