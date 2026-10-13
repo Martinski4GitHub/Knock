@@ -168,10 +168,10 @@ Other use case possibilities may include:
 1. Kick off a backup -- like using "sh /jffs/scripts/backupmon.sh -backup"
 2. Turn lights on and off with JGrana's huetil and uKasa apps
 3. Initiate a WAN failover with the wan_failover script
-4. Enable the SSH server over the WAN interface, but only when necessary, and then disabling it when done.
-5. Enable WireGuard or OpenVPN Server over the WAN interface when needed, and then disabling it when done.
+4. Enable the SSH server over the WAN interface, but only when necessary, and disable it later when done.
+5. Enable WireGuard or OpenVPN Server over the WAN interface when needed, and disable it later when done.
 6. Enable/disable already-preconfigured forwarding ports over the WAN interface when needed
-7. Remotely trigger a router reboot over the WAN interface, when the router seem to be unresponsive
+7. Trigger a remote router reboot over the WAN interface when the router becomes otherwise unresponsive
 
 ## Acknowledgments
 The latest 3.0.0 release version was a collaborative effort between @Rung and @Martinski.
