@@ -171,7 +171,7 @@ Other use case possibilities may include:
 4. Enable the SSH server over the WAN interface, but only when necessary, and then disabling it when done.
 5. Enable WireGuard or OpenVPN Server over the WAN interface when needed, and then disabling it when done.
 6. Enable/disable already-preconfigured forwarding ports over the WAN interface when needed
-7. Remotely trigger a router rebot over the WAN interface, for when the router seem to be unresponsive
+7. Remotely trigger a router reboot over the WAN interface, when the router seem to be unresponsive
 
 ## Acknowledgments
 The latest 3.0.0 release version was a collaborative effort between @Rung and @Martinski.
