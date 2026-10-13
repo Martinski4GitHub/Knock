@@ -81,7 +81,7 @@ When sending a Multi-Port Knock sequence, each successive knock in the combinati
 
 ## Email Notifications for Port Knocks
 
-You have the option to enable email notifications for every port knock that's successfully detected and triggers execution of its associated command. This feature can be enabled via the "**Additional Options**" menu.
+You have the option to enable email notifications for every port knock that's successfully detected and triggers execution of its associated command. This feature can be enabled via the "**Additional Options**" submenu.
 
 Before enabling the "Email Notifications" option, users must have already configured their personal email settings via the AMTM 'em) Email settings' option.
     
@@ -89,7 +89,7 @@ Users can select the email format type: **HTML** or **Plain Text**.
     
 A secondary email address can be set up to receive email notifications in addition to the primary recipient.
 
-The Knock script downloads, installs and updates the [**SendEmail**](https://github.com/Martinski4GitHub/SendEmail "Go to SendEmail repo") tool to handle all email notifications.
+The Knock script downloads, installs and updates the [**SendEmail**](https://github.com/Martinski4GitHub/SendEmail "Go to SendEmail repository") tool to handle all email notifications.
 
 
 ##
