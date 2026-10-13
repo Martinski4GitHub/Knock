@@ -44,7 +44,7 @@
 #Developed by Rung and Martinski
 #
 #-----------------------------------------------------------------------
-# Last Updated: 2026-Oct-04
+# Last Updated: 2026-Oct-12
 ########################################################################
 
 #Update Log:
@@ -99,7 +99,7 @@ set -u
 
 readonly version=3.2.0
 readonly REV="$version"
-readonly VERS_TAG="Beta_26100407"
+readonly VERS_TAG="Beta_26101220"
 readonly INTERVAL=5
 readonly MIN_KNOCK_PORT=1024  #Avoid well-known RESERVED ports#
 readonly MULTI_PORT_KNOCK_WAIT=30
@@ -216,11 +216,11 @@ if [ ! -f "$developFlag" ]
 then
 	readonly branchxStr_TAG=""
 	readonly developVer_TAG=""
-	readonly versionStr_TAG="[v${version}]"
+	readonly versionStr_TAG="$version"
 else
 	readonly branchxStr_TAG="[Branch: development]"
 	readonly developVer_TAG="[${version}_${VERS_TAG}]"
-	readonly versionStr_TAG="[v${version}_${VERS_TAG}]"
+	readonly versionStr_TAG="${version}_$VERS_TAG"
 fi
 
 # The shared AMTM Email Configuration file with user-defined settings #
@@ -4064,8 +4064,8 @@ fi
 
 if [ "$1" != "-loop" ]
 then
-	echo "Knock.sh: Router Commands for non-admin users"
-	echo "Version $REV"
+	printf "\nKnock.sh: Router Commands for non-admin users\n"
+	printf "Version: ${GREENct}$versionStr_TAG ${MAGNTct}${branchxStr_TAG:-[Branch: production]}${CLEARct}\n"
 	echo
 	echo "To install:"
 	echo -e "\t1) Move script to ${SCRIPTS_DIR}/ directory"
@@ -4077,25 +4077,25 @@ then
 	echo -e "\t\tDefault configuration file has use-case examples:"
 	echo -e "\t\t\tWake PC, reboot router, and run custom enable/disable scripts (e.g. for VPN Director rules)"
 	echo "	4B) Run 'knock -start'"
-	echo ""
+	echo
 	echo "To update configuration:"
 	echo "	Run 'knock -stop'"
 	echo "	Run 'knock -edit' -or-"
 	echo "	Manually update $configFPath"
 	echo "	Run 'knock -start'"
-	echo ""
+	echo
 	echo "To display current Knock status:"
 	echo "	Run 'knock -status'"
-	echo ""
+	echo
 	echo "To display current configuration file information:"
 	echo "	Run 'knock -config'"
-	echo ""
+	echo
 	echo "To update to the lastest version of script:"
 	echo "	Run 'knock -update'"
-	echo ""
+	echo
 	echo "To uninstall:"
 	echo "	Run 'knock -uninstall'"
-	echo ""
+	echo
 	echo "To display main menu:"
 	echo "	Run 'knock'"
 	exit 0
@@ -4220,7 +4220,7 @@ echo "Version $REV"
 # For Debug Logging of Port Knocks #
 logKnockEnabled="$(_GetConfigOption_ LOG_KNOCK_ENABLE false)"
 
-logMsg="Waiting for port knocks ${versionStr_TAG}..."
+logMsg="Waiting for port knocks [v${versionStr_TAG}]..."
 _LogMsg_ "$logMsg" "$pLogWARNG" ; _LogKnock_ "$logMsg"
 
 renice 10 $$
