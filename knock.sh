@@ -44,7 +44,7 @@
 #Developed by Rung and Martinski
 #
 #-----------------------------------------------------------------------
-# Last Updated: 2026-Aug-15
+# Last Updated: 2026-Oct-12
 ########################################################################
 
 #Update Log:
@@ -91,10 +91,15 @@
 # - Provided method to direct install develop version
 # - Fixed issue with Skynet flooding the dmesg buffer with unsolicited WAN traffic entries.
 # - Correctly display new version during update
+# 3.2.0
+# - New "Email Notifications" feature.
+# - Removed support for Entware 'screen' utility.
+#-----------------------------------------------------------------------#
+set -u
 
-readonly version=3.1.0
+readonly version=3.2.0
 readonly REV="$version"
-readonly VERS_TAG="Stable_26081517"
+readonly VERS_TAG="Stable_26101220"
 readonly INTERVAL=5
 readonly MIN_KNOCK_PORT=1024  #Avoid well-known RESERVED ports#
 readonly MULTI_PORT_KNOCK_WAIT=30
@@ -127,6 +132,8 @@ readonly MAGNTct="\e[1;35m"
 readonly CRITLct="\e[1;41m"
 readonly ERRORct="$REDct"
 readonly WARNGct="$YELLWct"
+readonly GRAYEDct="\e[0;30;47m"
+readonly BOLDUNDERLN="\e[1;4m"
 
 readonly TEMP_DIR="/tmp/var/tmp"
 readonly shScriptName="knock.sh"
@@ -135,7 +142,7 @@ readonly scriptConfig="config.txt"
 readonly knockWaitTimerName="knockWaitTimer"
 readonly knockLoopDaemonSEM="${TEMP_DIR}/knockLoopDaemon.FSEM"
 
-if [ -t 0 ] && ! tty | grep -qwi "NOT"
+if [ -t 0 ] && ! tty | grep -qwi 'NOT'
 then
 	readonly isInteractive=true
 	readonly stty_save="$(stty -g)"   #Save settings (e.g. blocking input)#
@@ -161,7 +168,8 @@ readonly configFPath="${INSTALL_DIR}/$pKnockConfig"
 readonly savedConfig="${TEMP_DIR}/$pKnockConfig"
 readonly iptFW1="${TEMP_DIR}/${scriptFNameTag}_iptables1.txt"
 readonly iptFW2="${TEMP_DIR}/${scriptFNameTag}_iptables2.txt"
-readonly versionFile="${INSTALL_DIR}/version.txt"
+readonly versionFName="version.txt"
+readonly versionFPath="${INSTALL_DIR}/$versionFName"
 readonly shScriptFile="${SCRIPTS_DIR}/$shScriptName"
 readonly profileAdd="/jffs/configs/profile.add"
 readonly usbPostMount="${SCRIPTS_DIR}/post-mount"
@@ -208,25 +216,55 @@ if [ ! -f "$developFlag" ]
 then
 	readonly branchxStr_TAG=""
 	readonly developVer_TAG=""
-	readonly versionStr_TAG="[v${version}]"
+	readonly versionStr_TAG="$version"
 else
 	readonly branchxStr_TAG="[Branch: development]"
 	readonly developVer_TAG="[${version}_${VERS_TAG}]"
-	readonly versionStr_TAG="[v${version}_${VERS_TAG}]"
+	readonly versionStr_TAG="${version}_$VERS_TAG"
 fi
 
-readonly REPO_URL="https://raw.githubusercontent.com/Rung-Asus/Knock"
-readonly gitURL_MAIN="${REPO_URL}/main"
-readonly gitURL_DEVL="${REPO_URL}/develop"
-gitURL_REPO="$gitURL_MAIN"
+# The shared AMTM Email Configuration file with user-defined settings #
+readonly AMTM_Mail_Dir_Path="${ADDONS_DIR}/amtm/mail"
+readonly AMTM_Mail_Conf_File="${AMTM_Mail_Dir_Path}/email.conf"
+readonly AMTM_Mail_Pswd_File="${AMTM_Mail_Dir_Path}/emailpw.enc"
+
+# The custom SendEmail Script to handle email notifications #
+readonly SEND_EMAIL_BRANCH="master"
+readonly SEND_EMAIL_URL_BASE2="https://raw.githubusercontent.com/MartinSkyW"
+readonly SEND_EMAIL_URL_BASE1="https://raw.githubusercontent.com/Martinski4GitHub"
+readonly SEND_EMAIL_REPO_URL1="${SEND_EMAIL_URL_BASE1}/SendEmail/$SEND_EMAIL_BRANCH"
+readonly SEND_EMAIL_REPO_URL2="${SEND_EMAIL_URL_BASE2}/SendEmail/$SEND_EMAIL_BRANCH"
+
+readonly SEND_EMAIL_SCRIPT_TNAME="SendEmail"
+readonly SEND_EMAIL_SCRIPT_FNAME="${SEND_EMAIL_SCRIPT_TNAME}.sh"
+readonly SEND_EMAIL_INSTALL_PATH="${ADDONS_DIR}/${SEND_EMAIL_SCRIPT_TNAME}.d"
+readonly SEND_EMAIL_SCRIPT_FPATH="${SEND_EMAIL_INSTALL_PATH}/$SEND_EMAIL_SCRIPT_FNAME"
+readonly SEND_EMAIL_SYMBLK_FPATH="${SCRIPTS_DIR}/$SEND_EMAIL_SCRIPT_TNAME"
+
+readonly SCRIPT_REPO_URL="https://raw.githubusercontent.com/Rung-Asus/Knock"
+readonly SCRIPT_URL_MAIN="${SCRIPT_REPO_URL}/main"
+readonly SCRIPT_URL_DEVL="${SCRIPT_REPO_URL}/develop"
+gitURL_REPO="$SCRIPT_URL_MAIN"
+
+readonly curlHTTPstatusStr="HTTP_Status_Code"
+readonly curlTmpLogFile="${TEMP_DIR}/tmpCurl_${scriptFNameTag}_$$.TMP.LOG"
+readonly curlErrLogFile="${TEMP_DIR}/tmpCurl_${scriptFNameTag}_$$.ERR.LOG"
 
 # Workaround for Entware ELF binaries compiled with RUNPATH #
 unset LD_LIBRARY_PATH
 [ "$HOME" != "/root" ] && export HOME="/root"
-export SCREENDIR="${HOME}/.screen"
 
-#To optionally use Entware screen utility#
-useEntwareScreen=false
+readonly emailSenderID="Knock"
+readonly tmpEmailBodyFPath="${TEMP_DIR}/tmpEMailBody_${scriptFNameTag}_$$.TMP"
+
+# User-configurable email settings #
+email_CC_Name=""
+email_CC_Addr=""
+email_CC_Addr_OK=false
+email_FormatType="HTML"
+email_ENABLEDopt=false
+isEmailFormatTypeHTML=true
+isEmailConfigEnabledInAMTM=false
 
 #----------------------------------------#
 # Modified by Martinski W. [2026-May-17] #
@@ -574,7 +612,7 @@ DoRefresh()
 _CenterTextStr_()
 {
     if [ $# -lt 2 ] || [ -z "$1" ] || [ -z "$2" ] || \
-       ! echo "$2" | grep -qE "^[1-9][0-9]+$"
+       ! echo "$2" | grep -qE '^[1-9][0-9]+$'
     then echo ; return 1
     fi
     local stringLen="${#1}"
@@ -683,10 +721,12 @@ _LogMsg_()
     if [ $# -lt 1 ] || [ -z "$1" ]
     then return 1
     fi
-    if [ $# -lt 2 ] || [ -z "$2" ] || \
-       ! echo "$2" | grep -qE "^[1-6]$"
-    then logPrioNum="$pLogNOTIC"
-    else logPrioNum="$2"
+    local logPrioNum
+
+    if [ $# -gt 1 ] && [ -n "$2" ] && \
+       echo "$2" | grep -qE '^[1-6]$'
+    then logPrioNum="$2"
+    else logPrioNum="$pLogNOTIC"
     fi
     if "$isInteractive" && \
        { [ $# -lt 3 ] || [ "$3" != "NOECHO" ] ; }
@@ -703,6 +743,8 @@ _LogMsg_()
         logger -t "$logTagStr" -p "$logPrioNum" "$1"
     fi
 }
+
+_PrintMsg_() { "$isInteractive" && printf "$1" ; }
 
 #-------------------------------------#
 # Added by Martinski W. [2026-May-31] #
@@ -931,29 +973,16 @@ _RemoveCustomFirewallRules_()
 #Verify everything is in its place#
 CheckInstall()
 {
-	if "$useEntwareScreen"
-	then
-		if [ ! -x /opt/sbin/screen ] || \
-		   [ ! -s "$usbPostMount" ]  || \
-		   ! grep -q "/$shScriptName" "$usbPostMount"
-		then return 1
-		fi
-	else
-		if [ ! -s "$servicesStart" ] || \
-		   ! grep -q "/$shScriptName" "$servicesStart"
-		then return 1
-		fi
-	fi
-
 	if [ ! -s "$shScriptFile" ]  || \
 	   [ ! -s "$configFPath" ]   || \
 	   [ ! -s "$profileAdd" ]    || \
 	   [ ! -s "$firewallStart" ] || \
-	   ! grep -q "/$shScriptName" "$profileAdd" || \
-	   ! grep -q "/$shScriptName" "$firewallStart"
+	   [ ! -s "$servicesStart" ] || \
+	   ! grep -q "$shScriptFile" "$profileAdd"   || \
+	   ! grep -q "$shScriptFile" "$servicesStart" || \
+	   ! grep -q "$shScriptFile" "$firewallStart"
 	then return 1
 	fi
-
 	return 0
 }
 
@@ -962,16 +991,9 @@ CheckInstall()
 #-------------------------------------#
 _CheckBackgroundProcess_()
 {
-	if "$useEntwareScreen"
-	then
-		if /opt/sbin/screen -ls knock >/dev/null
-		then return 0
-		fi
-	else
-		if top -bn1 | grep -qE "[/]$shScriptName -loop" && \
-		   top -bn1 | grep -qE "[/]$shScriptName -dmesgLog"
-		then return 0
-		fi
+	if top -bn1 | grep -qE "[/]$shScriptName -loop" && \
+	   top -bn1 | grep -qE "[/]$shScriptName -dmesgLog"
+	then return 0
 	fi
 	return 1
 }
@@ -1017,7 +1039,7 @@ _CheckConfigurationFile_()
     while read -r cfgLINE
     do
         if [ -z "$cfgLINE" ] || \
-           echo "$cfgLINE" | grep -qE "^[[:blank:]]*[#].*"
+           echo "$cfgLINE" | grep -qE '^[[:blank:]]*[#].*'
         then continue  #SKIP#
         fi
         cfgLINE="$(echo "$cfgLINE" | sed 's/  \+/  /')"
@@ -1033,7 +1055,7 @@ _CheckConfigurationFile_()
             continue
         fi
 
-        if echo "$theCMDx" | grep -qE "^[[:blank:]]*[#].*"
+        if echo "$theCMDx" | grep -qE '^[[:blank:]]*[#].*'
         then
             errorFound=true
             "$isVerboseMode" && \
@@ -1130,7 +1152,7 @@ _CreateCustomFirewallRules_()
 	while read -r cfgLINE
 	do
 		if [ -z "$cfgLINE" ] || \
-		   echo "$cfgLINE" | grep -qE "^[[:blank:]]*[#].*"
+		   echo "$cfgLINE" | grep -qE '^[[:blank:]]*[#].*'
 		then continue  #SKIP#
 		fi
 		cfgLINE="$(echo "$cfgLINE" | sed 's/  \+/  /')"
@@ -1139,7 +1161,7 @@ _CreateCustomFirewallRules_()
 		theCMDx="$(echo "$cfgLINE" | awk -F' ' '{match($0, $3); print substr($0, RSTART)}')"
 
 		if [ -z "$thePORTS" ] || [ -z "$theIFACE" ] || [ -z "$theCMDx" ] || \
-		   echo "$theCMDx" | grep -qE "^[[:blank:]]*[#].*"
+		   echo "$theCMDx" | grep -qE '^[[:blank:]]*[#].*'
 		then continue  #INVALID#
 		fi
 
@@ -1236,7 +1258,7 @@ CheckFirewall()
 	while read -r cfgLINE
 	do
 		if [ -z "$cfgLINE" ] || \
-		   echo "$cfgLINE" | grep -qE "^[[:blank:]]*[#].*"
+		   echo "$cfgLINE" | grep -qE '^[[:blank:]]*[#].*'
 		then continue  #SKIP#
 		fi
 		cfgLINE="$(echo "$cfgLINE" | sed 's/  \+/  /')"
@@ -1245,7 +1267,7 @@ CheckFirewall()
 		theCMDx="$(echo "$cfgLINE" | awk -F' ' '{match($0, $3); print substr($0, RSTART)}')"
 
 		if [ -z "$thePORTS" ] || [ -z "$theIFACE" ] || [ -z "$theCMDx" ] || \
-		   echo "$theCMDx" | grep -qE "^[[:blank:]]*[#].*"
+		   echo "$theCMDx" | grep -qE '^[[:blank:]]*[#].*'
 		then continue  #INVALID#
 		fi
 
@@ -1367,15 +1389,69 @@ ShowStatus()
 #-------------------------------------#
 _DownloadFileFromRepo_()
 {
-	if [ $# -lt 2 ]
-	then
-		echo "**ERROR**: NO Parameters"
-		return 1
-	fi
-	local theSRCE="$1"  theDEST="$2"
+   if [ $# -lt 3 ] || [ -z "$1" ] || [ -z "$2" ] || [ -z "$3" ]
+   then return 1
+   fi
 
-	curl --silent --fail --retry 3 --retry-delay 3 --retry-all-errors --connect-timeout 15 --max-time 30 "$theSRCE" -o "$theDEST"
-	return $?
+   local srcFilePathURL="${1}/$2"  
+   local tempFilePathDL="${TEMP_DIR}/${2}.DL.$$.TMP"
+   local theDestFName="$2"  theDestFPath="$3"
+   local theMsgStr  logMsgStr  tryDLcount=1
+   local curlRetCode  statusCODE  statusSTRx  httpStatusSTR
+
+   if [ $# -gt 3 ] && [ -z "$4" ] && echo "$4" | grep -qE '^[1-3]$'
+   then tryDLcount="$4"
+   fi
+   if [ -z "${urlDLmax:+xSETx}" ]
+   then tryDLmax=1
+   else tryDLmax="$urlDLmax"
+   fi
+
+   rm -f "$tempFilePathDL"
+   printf '' > "$curlErrLogFile"
+   printf '' > "$curlTmpLogFile"
+
+   curl -LSs --retry 3 --retry-delay 5 --retry-connrefused \
+   --connect-timeout 30 --max-time 60 \
+   -w "${curlHTTPstatusStr}: %{http_code}\n" --stderr "$curlErrLogFile" \
+   "$srcFilePathURL" --output "$tempFilePathDL" >> "$curlTmpLogFile"
+   curlRetCode="$?"
+
+   statusCODE="$curlRetCode"
+   statusSTRx="Curl Status Code: $curlRetCode"
+   httpStatusSTR="$(grep -oE "${curlHTTPstatusStr}: [4-5][0-9]{2,}" "$curlTmpLogFile")"
+
+   if [ "$curlRetCode" -eq 0 ] && \
+      [ -z "$httpStatusSTR" ] && [ -s "$tempFilePathDL" ]
+   then
+       mv -f "$tempFilePathDL" "$theDestFPath"
+       dos2unix "$theDestFPath" ; chmod 644 "$theDestFPath"
+   else
+       if [ "$curlRetCode" -eq 0 ] && [ -n "$httpStatusSTR" ]
+       then
+           statusCODE="$(echo "$httpStatusSTR" | awk -F' ' '{print $2}')"
+           statusSTRx="HTTP Status Code: $statusCODE"
+       fi
+       logMsgStr="**ERROR**: Unable to download the script file [$theDestFName] [${statusSTRx}]"
+       theMsgStr="${REDct}**ERROR**${CLEARct}: Unable to download the script file ${REDct}${theDestFName}${CLEARct} [${MAGNTct}${statusSTRx}${CLEARct}]"
+       _LogMsg_ "$logMsgStr" "$pLogERROR" NOECHO
+
+       if [ "$tryDLcount" -eq "$tryDLmax" ] || "$isVerboseMode"
+       then
+           if [ -s "$curlErrLogFile" ]
+           then echo ; cat "$curlErrLogFile"
+           fi
+           _PrintMsg_ "\n${theMsgStr}\n"
+           if [ "$tryDLcount" -lt "$tryDLmax" ]
+           then
+               _PrintMsg_ "\nTrying again with a different URL...\n"
+           fi
+       fi
+       rm -f "$tempFilePathDL"
+   fi
+
+   rm -f "$curlErrLogFile" "$curlTmpLogFile"
+   return "$statusCODE"
 }
 
 #----------------------------------------#
@@ -1383,43 +1459,49 @@ _DownloadFileFromRepo_()
 #----------------------------------------#
 UpdateScript()
 {
+	local newVer  updateType
+
 	banner
 	if [ -f "$developFlag" ]
 	then
 		echo "On development branch."
-		gitURL_REPO="$gitURL_DEVL"
+		gitURL_REPO="$SCRIPT_URL_DEVL"
 	fi
-	rm -f "$versionFile" 2>/dev/null
+	rm -f "$versionFPath"
 
-	_DownloadFileFromRepo_ "${gitURL_REPO}/version.txt" "$versionFile"
-	if [ -s "$versionFile" ]
+	if ! _DownloadFileFromRepo_ "$gitURL_REPO" "$versionFName" "$versionFPath"
 	then
-		newVer="$(cat "$versionFile" | head -n1)"
-		echo "Latest version: $newVer"
-		echo "Current version: $REV"
+		printf "\nThe file ${REDct}${versionFName}${CLEARct} failed to download.\n"
+		return 1
+	fi
+	newVer="$(cat "$versionFPath" | head -n1)"
+	printf "Latest version: ${GREENct}${newVer}${CLEARct}\n"
+	printf "Current version: ${GREENct}${REV}${CLEARct}\n"
 
-		if { [ $# -gt 0 ] && [ -n "$1" ] ; } || \
-		   PromptYN "Proceed with update? (y/n):"
+	if [ $# -gt 0 ] && [ "$1" = "-force" ]
+	then updateType="-force"
+	else updateType="-check"
+	fi
+
+	if [ "$updateType" = "-force" ] || PromptYN "Proceed with update? (y/n):"
+	then
+		printf "\nDownloading...\n"
+		if ! _DownloadFileFromRepo_ "$gitURL_REPO" "$shScriptName" "$shScriptFile"
 		then
-			echo -e "\nDownloading..."
-			_DownloadFileFromRepo_ "${gitURL_REPO}/$shScriptName" "$shScriptFile"
-			chmod 755 "$shScriptFile"
-			echo "Installing..."
-			$shScriptFile -install -force
-			echo "Restarting..."
-			$shScriptFile -start -nobanner
-			echo "Update completed."
-			echo
-			#Show updated version#
-			$shScriptFile -version
-			ShowStatus
-			ShowConfig quietCheck
-		else
-			echo -e "\nNo update performed"
+			printf "\nThe script ${REDct}${shScriptName}${CLEARct} was NOT updated. Download failed.\n"
 			return 1
 		fi
+		chmod 755 "$shScriptFile"
+		echo "Installing..."
+		$shScriptFile -install "$updateType"
+		echo "Restarting..."
+		$shScriptFile -start -nobanner
+		printf "Update completed.\n\n"
+		$shScriptFile -version
+		ShowStatus
+		ShowConfig quietCheck
 	else
-		echo "**ERROR**: network issue"
+		printf "\nNo update performed\n"
 		return 1
 	fi
 	return 0
@@ -1588,7 +1670,7 @@ EditPortKnockConfig()
 				EditLine
 				[ -z "$st" ] && st="#"  #Check for blank output#
 				allGood=true
-				if [ -z "$st" ] || echo "$st" | grep -qE "^[[:blank:]]*[#].*"
+				if [ -z "$st" ] || echo "$st" | grep -qE '^[[:blank:]]*[#].*'
 				then
 					allGood=false
 				fi
@@ -1717,7 +1799,7 @@ EditPortKnockConfig()
 					_LogMsg_ "**ERROR**: INVALID number of ports [$kPorts] found" "$pLogERROR" NOLOG
 				fi
 
-				if [ -z "$theCMD" ] || echo "$theCMD" | grep -qE "^[[:blank:]]*[#].*"
+				if [ -z "$theCMD" ] || echo "$theCMD" | grep -qE '^[[:blank:]]*[#].*'
 				then
 					theCmdOK=false
 					_LogMsg_ "**ERROR**: INVALID command [$theCMD] found" "$pLogERROR" NOLOG
@@ -1744,7 +1826,7 @@ EditPortKnockConfig()
 
 				#Fix URL of new TCP/UDP tags#
 				portNx2="$(echo "$portNx" | awk -F':' '{print $1}')"
-				if echo "$portNx" | grep -q ":U"
+				if echo "$portNx" | grep -q ':U'
 				then
 					printf "${GREENct}nc -vz -u %s %s${CLEARct}\n" "$IFaceIPaddr" "$portNx2"
 				else
@@ -1765,7 +1847,7 @@ EditPortKnockConfig()
 
 						#Fix URL of new TCP/UDP tags#
 						portNx2="$(echo "$portNx" | awk -F':' '{print $1}')"
-						if echo "$portNx" | grep -q ":U"
+						if echo "$portNx" | grep -q ':U'
 						then
 							printf "${GREENct}nc -vz -u %s %s${CLEARct}\n" "$IFaceIPaddr" "$portNx2"
 						else
@@ -1849,7 +1931,7 @@ EditPortKnockConfig()
 					exitDelete=true
 					break
 				elif [ -n "$commandNum" ] && \
-				     echo "$commandNum" | grep -qE "^[1-9][0-9]?$" && \
+				     echo "$commandNum" | grep -qE '^[1-9][0-9]?$' && \
 				     [ "$commandNum" -gt 0 ] && [ "$commandNum" -le "$commandCount" ]
 				then
 					break
@@ -1892,7 +1974,7 @@ EditPortKnockConfig()
 					exitEdit=true
 					break
 				elif [ -n "$commandNum" ] && \
-				     echo "$commandNum" | grep -qE "^[1-9][0-9]?$" && \
+				     echo "$commandNum" | grep -qE '^[1-9][0-9]?$' && \
 				     [ "$commandNum" -gt 0 ] && [ "$commandNum" -le "$commandCount" ]
 				then
 					break
@@ -1980,7 +2062,7 @@ EditPortKnockConfig()
 ##-------------------------------------##
 readonly knockMutexFLock_FD=564
 readonly knockMutexFLock_FN="${TEMP_DIR}/knockLoopDaemon.FLOCK"
-knockMutexFLock_OK=false  #DO NOT have FLock#
+knockMutexFLock_OK=false   #To check if/when we own the Lock#
 
 _ReleaseMutexFLock_()
 {
@@ -2015,6 +2097,10 @@ _ValidateMutexFLock_()
     return 0
 }
 
+#---------------------------------------------------------------------#
+# This is a mutually exclusive, non-blocking FLOCK mechanism used
+# to prevent more than one Knock background daemon process running.
+#---------------------------------------------------------------------#
 _AcquireMutexFLock_()
 {
     local retCode  procInfo  procName  procIDno  procIDof=""
@@ -2035,9 +2121,7 @@ _AcquireMutexFLock_()
         fi
     fi
 
-    [ ! -s "$knockMutexFLock_FN" ] && \
     eval exec "${knockMutexFLock_FD}>$knockMutexFLock_FN"
-
     if flock -x -n "$knockMutexFLock_FD" 2>/dev/null
     then
         printf "$(basename "$0")|$$\n" > "$knockMutexFLock_FN"
@@ -2125,7 +2209,7 @@ ShowConfig()
 				_LogMsg_ "**ERROR**: INVALID number of ports [$thePORTS] found" "$pLogERROR" NOLOG
 			fi
 
-			if [ -z "$theCMDx" ] || echo "$theCMDx" | grep -qE "^[[:blank:]]*[#].*"
+			if [ -z "$theCMDx" ] || echo "$theCMDx" | grep -qE '^[[:blank:]]*[#].*'
 			then
 				theCmdOK=false
 				_LogMsg_ "**ERROR**: INVALID command [$theCMDx] found" "$pLogERROR" NOLOG
@@ -2152,7 +2236,7 @@ ShowConfig()
 
 			#Fix URL of new TCP/UDP tags#
 			portNx2="$(echo "$portNx" | awk -F':' '{print $1}')"
-			if echo "$portNx" | grep -q ":U"
+			if echo "$portNx" | grep -q ':U'
 			then
 				printf "${GREENct}nc -vz -u %s %s${CLEARct}\n" "$IFaceIPaddr" "$portNx2"
 			else
@@ -2173,7 +2257,7 @@ ShowConfig()
 
 					#Fix URL of new TCP/UDP tags#
 					portNx2="$(echo "$portNx" | awk -F':' '{print $1}')"
-					if echo "$portNx" | grep -q ":U"
+					if echo "$portNx" | grep -q ':U'
 					then
 						printf "${GREENct}nc -vz -u %s %s${CLEARct}\n" "$IFaceIPaddr" "$portNx2"
 					else
@@ -2206,7 +2290,7 @@ _WaitForCustomFirewallRules_()
 	local sleepSecsNUM=0  sleepSecsMAX
 
 	if [ $# -eq 0 ] || [ -z "$1" ] || \
-	   ! echo "$1" | grep -qE "^[1-9][0-9]?$"
+	   ! echo "$1" | grep -qE '^[1-9][0-9]?$'
 	then sleepSecsMAX=10
 	else sleepSecsMAX="$1"
 	fi
@@ -2221,44 +2305,18 @@ _WaitForCustomFirewallRules_()
 }
 
 #-------------------------------------#
-# Added by Martinski W. [2026-Jun-02] #
-#-------------------------------------#
-_StartBackground_ScreenProcess_()
-{
-	if [ ! -x /opt/sbin/screen ]
-	then return 1
-	fi
-	local sleepSecsNUM=0  sleepSecsMAX
-
-	if [ $# -eq 0 ] || [ -z "$1" ] || \
-	   ! echo "$1" | grep -qE "^[1-9][0-9]?$"
-	then sleepSecsMAX=10
-	else sleepSecsMAX="$1"
-	fi
-
-	/opt/sbin/screen -dmS knock "$shScriptFile" -loop
-	sleep 2   #Allow time to initialize#
-
-	while [ "$((sleepSecsNUM++))" -lt "$sleepSecsMAX" ]
-	do
-		sleep 1
-		if /opt/sbin/screen -ls knock >/dev/null && \
-		   top -bn1 | grep -qE "[/]$shScriptName -dmesgLog"
-		then break
-		fi
-	done
-	return 0
-}
-
-#-------------------------------------#
 # Added by Martinski W. [2026-Jun-06] #
 #-------------------------------------#
+#--------------------------------------------------------------#
+# Even though Entware 'screen' utility is NO LONGER SUPPORTED,
+# we need to make sure any rogue 'screen' process is STOPPED.
+#--------------------------------------------------------------#
 _StopBackground_ScreenProcess_()
 {
 	local sleepSecsNUM=0  sleepSecsMAX
 
 	if [ $# -eq 0 ] || [ -z "$1" ] || \
-	   ! echo "$1" | grep -qE "^[1-9][0-9]?$"
+	   ! echo "$1" | grep -qE '^[1-9][0-9]?$'
 	then sleepSecsMAX=10
 	else sleepSecsMAX="$1"
 	fi
@@ -2284,6 +2342,10 @@ _StopBackground_ScreenProcess_()
 #-------------------------------------#
 # Added by Martinski W. [2026-Jun-06] #
 #-------------------------------------#
+#--------------------------------------------------------------#
+# Even though Entware 'screen' utility is NO LONGER SUPPORTED,
+# we need to make sure any rogue 'screen' process is STOPPED.
+#--------------------------------------------------------------#
 _CheckAndStopBackground_ScreenProcess_()
 {
 	if [ -x /opt/sbin/screen ] && \
@@ -2292,7 +2354,7 @@ _CheckAndStopBackground_ScreenProcess_()
 		{ [ $# -eq 0 ] || [ -z "$1" ] ; } && \
 		printf "An existing background process must be stopped first. Please wait...\n"
 		_StopBackground_ScreenProcess_ 5
-		return $?
+		return "$?"
 	fi
 	return 0
 }
@@ -2305,7 +2367,7 @@ _StartBackground_DaemonProcess_()
 	local sleepSecsNUM=0  sleepSecsMAX
 
 	if [ $# -eq 0 ] || [ -z "$1" ] || \
-	   ! echo "$1" | grep -qE "^[1-9][0-9]?$"
+	   ! echo "$1" | grep -qE '^[1-9][0-9]?$'
 	then sleepSecsMAX=10
 	else sleepSecsMAX="$1"
 	fi
@@ -2332,7 +2394,7 @@ _StopBackground_DaemonProcess_()
 	local sleepSecsNUM=0  sleepSecsMAX
 
 	if [ $# -eq 0 ] || [ -z "$1" ] || \
-	   ! echo "$1" | grep -qE "^[1-9][0-9]?$"
+	   ! echo "$1" | grep -qE '^[1-9][0-9]?$'
 	then sleepSecsMAX=10
 	else sleepSecsMAX="$1"
 	fi
@@ -2382,7 +2444,7 @@ _StartBackgroundProcess_()
 	if ! _CheckConfigurationFile_
 	then return 1
 	fi
-	local logMsg
+	local logMsg  retCode=0
 
 	_RemoveCustomFirewallRules_ INPUT
 
@@ -2405,12 +2467,7 @@ _StartBackgroundProcess_()
 	_LogMsg_ "$logMsg" "$pLogWARNG" ; _LogKnock_ "$logMsg"
 	printf "Please wait...\n"
 
-	if "$useEntwareScreen"
-	then
-		_StartBackground_ScreenProcess_ 5
-	else
-		_StartBackground_DaemonProcess_ 5
-	fi
+	_StartBackground_DaemonProcess_ 5
 
 	if CheckStatus
 	then
@@ -2427,9 +2484,9 @@ _StartBackgroundProcess_()
 		logMsg="**ERROR**: Cannot start $shScriptName background process"
 		_LogMsg_ "$logMsg" "$pLogERROR" ; _LogKnock_ "$logMsg"
 		echo
-		return 1
+		retCode=1
 	fi
-	return 0
+	return "$retCode"
 }
 
 #----------------------------------------#
@@ -2468,6 +2525,264 @@ _StopBackgroundProcess_()
 }
 
 #-------------------------------------#
+# Added by Martinski W. [2026-Sep-28] #
+#-------------------------------------#
+_InstallCustomSendEmailScript_()
+{
+   local retCode  urlDLcount  urlDLmax
+   local tempScriptPathDL="${TEMP_DIR}/${SEND_EMAIL_SCRIPT_FNAME}.DL.$$.SH"
+
+   _PrintMsg_ "\nInstalling the ${GREENct}${SEND_EMAIL_SCRIPT_TNAME}${CLEARct} script to handle email notifications..."
+
+   retCode=1 ; urlDLcount=0 ; urlDLmax=2
+   for theScriptURL in "$SEND_EMAIL_REPO_URL1" "$SEND_EMAIL_REPO_URL2"
+   do
+       urlDLcount="$((urlDLcount + 1))"
+       if _DownloadFileFromRepo_ "$theScriptURL" "$SEND_EMAIL_SCRIPT_FNAME" "$tempScriptPathDL" "$urlDLcount"
+       then
+           retCode=0
+           chmod 755 "$tempScriptPathDL"
+           if ! $tempScriptPathDL -install -quiet
+           then retCode=1
+           fi
+           break
+       fi
+   done
+
+   [ "$retCode" -ne 0 ] && \
+   _PrintMsg_ "\nThe script ${REDct}${SEND_EMAIL_SCRIPT_TNAME}${CLEARct} was NOT installed.\n\n"
+
+   return "$retCode"
+}
+
+#-------------------------------------#
+# Added by Martinski W. [2026-Sep-28] #
+#-------------------------------------#
+_CheckCustomSendEmailScript_()
+{
+   if [ ! -s "$SEND_EMAIL_SCRIPT_FPATH" ] || \
+      [ ! -L "$SEND_EMAIL_SYMBLK_FPATH" ]
+   then
+       [ $# -gt 0 ] && shift
+       _InstallCustomSendEmailScript_
+   fi
+   if [ $# -gt 0 ]
+   then
+       if [ "$1" = "-force" ]
+       then $SEND_EMAIL_SYMBLK_FPATH -forceupdate
+       else $SEND_EMAIL_SYMBLK_FPATH -checkupdate
+       fi
+   fi
+
+   if [ -s "$SEND_EMAIL_SCRIPT_FPATH" ] && \
+      [ -L "$SEND_EMAIL_SYMBLK_FPATH" ]
+   then return 0
+   else return 1
+   fi
+}
+
+##-------------------------------------##
+## Added by Martinski W. [2026-Sep-12] ##
+##-------------------------------------##
+_CheckEmailConfigFileFromAMTM_()
+{
+   local doShowMsg=true
+
+   if [ $# -gt 0 ] && [ "$1" = "NOLOG" ]
+   then doShowMsg=false
+   fi
+
+   # Initialize status first #
+   email_ENABLEDopt=false
+   email_CC_Addr_OK=false
+   isEmailConfigEnabledInAMTM=false
+
+   # AMTM Email Configuration file variables #
+   FROM_NAME=""  TO_NAME=""  FROM_ADDRESS=""  TO_ADDRESS=""
+   USERNAME=""  SMTP=""  PORT=""  PROTOCOL=""
+   PASSWORD=""  emailPwEnc=""
+
+   if [ ! -s "$AMTM_Mail_Conf_File" ] || [ ! -s "$AMTM_Mail_Pswd_File" ]
+   then
+       "$doShowMsg" && \
+       _LogMsg_ "**ERROR**: Unable to send email notifications [No config file]." "$pLogWARNG"
+       return 1
+   fi
+
+   . "$AMTM_Mail_Conf_File"
+
+   if [ -z "$TO_NAME" ] || [ -z "$USERNAME" ] || \
+      [ -z "$FROM_ADDRESS" ] || [ -z "$TO_ADDRESS" ] || \
+      [ -z "$SMTP" ] || [ -z "$PORT" ] || [ -z "$PROTOCOL" ] || \
+      [ -z "$emailPwEnc" ] || [ "$PASSWORD" = "PUT YOUR PASSWORD HERE" ]
+   then
+       "$doShowMsg" && \
+       _LogMsg_ "**ERROR**: Unable to send email notification [Empty variables]." "$pLogWARNG"
+       return 1
+   fi
+
+   email_CC_Name="$(_GetConfigOption_ EMAIL_CC_NAME)"
+   email_CC_Addr="$(_GetConfigOption_ EMAIL_CC_ADDR)"
+   email_FormatType="$(_GetConfigOption_ EMAIL_FORMAT_TYPE HTML)"
+   email_ENABLEDopt="$(_GetConfigOption_ EMAIL_SEND_ENABLE false)"
+
+   if [ "$email_FormatType" = "HTML" ]
+   then isEmailFormatTypeHTML=true
+   else isEmailFormatTypeHTML=false
+   fi
+
+   if [ -n "$email_CC_Name" ] && [ "$email_CC_Name" != "TBD" ] && \
+      [ -n "$email_CC_Addr" ] && [ "$email_CC_Addr" != "TBD" ]
+   then email_CC_Addr_OK=true
+   else email_CC_Addr_OK=false
+   fi
+
+   isEmailConfigEnabledInAMTM=true
+   return 0
+}
+
+#-------------------------------------#
+# Added by Martinski W. [2026-Sep-12] #
+#-------------------------------------#
+#--------------------------------------------------------------#
+# ARG1: The email Subject Line string.
+# ARG2: The full path of file containing the email Body text.
+# ARG3: The email Body Title Line string.
+#--------------------------------------------------------------#
+_SendEmailMsg_()
+{
+   local logMsgStr  theMsgStr
+
+   if [ ! -s "$SEND_EMAIL_SCRIPT_FPATH" ] || \
+      [ ! -L "$SEND_EMAIL_SYMBLK_FPATH" ]
+   then
+       logMsgStr="**ERROR**: The script [$SEND_EMAIL_SCRIPT_FNAME] is *NOT* installed."
+       theMsgStr="${REDct}**ERROR**${CLEARct}: ${MAGNTct}The script [$SEND_EMAIL_SCRIPT_FNAME] is *NOT* installed.${CLEARct}"
+       _PrintMsg_ "\n${theMsgStr}\n\n"
+       _LogMsg_ "$logMsgStr" "$pLogERROR" NOECHO ; _LogKnock_ "$logMsgStr"
+       return 1
+   fi
+
+   if [ $# -lt 3 ] || [ -z "$1" ] || [ -z "$2" ] || [ -z "$3" ]
+   then
+       _PrintMsg_ "\n${REDct}**ERROR**${CLEARct}: INSUFFICIENT email parameters\n"
+       return 1
+   fi
+   if [ ! -s "$2" ]
+   then
+       _PrintMsg_ "\n${REDct}**ERROR**${CLEARct}: Email body contents file [$2] NOT found.\n"
+       return 1
+   fi
+
+   local retCode  showErrorMsgs=false  emailFormat
+
+   if "$isEmailFormatTypeHTML"
+   then emailFormat="-html"
+   else emailFormat="-ptext"
+   fi
+   [ "$email_CC_Addr_OK" = "false" ] && email_CC_Addr_OK=""
+
+   $SEND_EMAIL_SYMBLK_FPATH "$emailFormat" -From="$emailSenderID" "$1" -Body="$2" \
+         -Title="$3" ${email_CC_Addr_OK:+-CCName="$email_CC_Name" -CCEmail="$email_CC_Addr"}
+   retCode="$?"
+
+   if [ "$retCode" -eq 0 ]
+   then
+       theMsgStr="The email notification [${GREENct}${1}${CLEARct}] was sent successfully."
+   else
+       showErrorMsgs=true
+       logMsgStr="**ERROR**: Failure to send email notification [$1] [Error Code: $retCode]."
+       theMsgStr="${REDct}**ERROR**${CLEARct}: Failure to send email notification [${MAGNTct}${1}${CLEARct}] [${REDct}Error Code: ${retCode}${CLEARct}]."
+       _LogKnock_ "$logMsgStr"
+   fi
+
+   if "$showErrorMsgs"
+   then _PrintMsg_ "\n${theMsgStr}\n"
+   fi
+   return "$retCode"
+}
+
+#-------------------------------------#
+# Added by Martinski W. [2026-Sep-12] #
+#-------------------------------------#
+#-----------------------------------------------------------#
+# ARG1: Interface ID
+# ARG2: Source IPv4 address
+# ARG3: List of Port numbers
+# ARG4: Command executed by the Port Knock
+#-----------------------------------------------------------#
+_SendKnockEmail_()
+{
+	if [ $# -lt 4 ] || [ -z "$1" ] || \
+	   [ -z "$2" ] || [ -z "$3" ] || [ -z "$4" ]
+	then
+		_PrintMsg_ "\n${REDct}**ERROR**${CLEARct}: INSUFFICIENT arguments [$*]\n"
+		return 1
+	fi
+
+	if ! _CheckCustomSendEmailScript_ || \
+	   ! _CheckEmailConfigFileFromAMTM_
+	then return 1
+	fi
+
+	local retCode
+	local emailSubjectSTR="Port Knock Detected"
+	local emailBodyTITLEx="Port Knock Command Sent"
+	local emailBodyFPath="${tmpEmailBodyFPath}.SEND"
+
+	{
+	   printf "\nThe \"<b>${shScriptName}</b>\" script detected a port knock, and its associated command was executed.\n"
+	   printf "\nInterface ID: <b>${1}</b>"
+	   printf "\nSource IPv4 Address: <b>${2}</b>\n"
+
+       if [ "${#3}" -le 25 ]
+       then printf "Port Number(s): <b>${3}</b>"
+       else printf "\nPort Number(s):\n<b>${3}</b>\n"
+       fi
+       if [ "${#4}" -le 25 ]
+       then printf "\nCommand: <b>${4}</b>\n\n"
+       else printf "\nCommand:\n<b>${4}</b>\n\n"
+       fi
+	} > "$emailBodyFPath"
+
+	_SendEmailMsg_ "$emailSubjectSTR" "$emailBodyFPath" "$emailBodyTITLEx"
+	retCode="$?"
+
+	rm -f "$emailBodyFPath"
+	return "$retCode"
+}
+
+#-------------------------------------#
+# Added by Martinski W. [2026-Sep-13] #
+#-------------------------------------#
+_SendTestEmail_()
+{
+	if ! _CheckCustomSendEmailScript_ || \
+	   ! _CheckEmailConfigFileFromAMTM_
+	then return 1
+	fi
+
+	local retCode
+	local emailSubjectSTR="TESTING Knock Email"
+	local emailBodyTITLEx="TESTING Knock Email Notifications"
+	local emailBodyFPath="${tmpEmailBodyFPath}.TEST"
+
+	{
+	   printf "\nThis is a <b>TEST</b> to check and verify if sending email notifications from"
+	   printf " the \"<b>${shScriptName}</b>\" script is working well as currently configured.\n\n"
+	} > "$emailBodyFPath"
+
+	_SendEmailMsg_ "$emailSubjectSTR" "$emailBodyFPath" "$emailBodyTITLEx"
+	retCode="$?"
+
+	rm -f "$emailBodyFPath"
+	return "$retCode"
+}
+
+_EscapeChars_()
+{ printf "%s" "$1" | sed 's/[][\/{}()$|.*^&+-]/\\&/g' ; }
+
+#-------------------------------------#
 # Added by Martinski W. [2026-Jun-07] #
 #-------------------------------------#
 _SetConfigOption_()
@@ -2475,26 +2790,41 @@ _SetConfigOption_()
 	if [ $# -lt 2 ] || [ -z "$1" ] || [ -z "$2" ]
 	then return 1
 	fi
+	local newVal
+
 	if [ ! -d "$INSTALL_DIR" ]
 	then
 		mkdir -p "$INSTALL_DIR"
 	fi
 	if [ ! -f "$optConfFile" ]
-	then
-		printf '' > "$optConfFile"
+	then printf '' > "$optConfFile"
 	fi
 	chmod 644 "$optConfFile"
 
+	#Get a "clean" string for 'grep' & 'sed'#
+	newVal="$(_EscapeChars_ "$2")"
+
 	if ! grep -qE "^${1}=.*" "$optConfFile"
 	then
-		echo "${1}=$2" >> "$optConfFile"
-		return 0
-	fi
-	if ! grep -qE "^${1}=$2" "$optConfFile"
+		if [ "$2" = 'TBD' ]
+		then echo "${1}=''" >> "$optConfFile"
+		elif printf '%s\n' "$2" | grep -qE '^(true|false)$'
+		then echo "${1}=${2}" >> "$optConfFile"
+		else echo "${1}='${2}'" >> "$optConfFile"
+		fi
+	elif ! grep -qE "^${1}=$newVal" "$optConfFile"
 	then
-		sed -i "s/${1}=.*/${1}=${2}/" "$optConfFile"
-		return 0
+		if [ "$2" = 'TBD' ]
+		then
+			sed -i "s/^${1}=.*/${1}=''/" "$optConfFile"
+		elif printf '%s\n' "$2" | grep -qE '^(true|false)$'
+		then
+			sed -i "s/^${1}=.*/${1}=${2}/" "$optConfFile"
+		else
+			sed -i "s/^${1}=.*/${1}='${newVal}'/" "$optConfFile"
+		fi
 	fi
+	return 0
 }
 
 #-------------------------------------#
@@ -2505,7 +2835,7 @@ _GetConfigOption_()
 	if [ $# -eq 0 ] || [ -z "$1" ]
 	then echo ; return 1
 	fi
-	local keyPair  defValue=""
+	local keyPair  keyValue  defValue=""
 
 	if [ $# -gt 1 ] && [ -n "$2" ]
 	then defValue="$2"
@@ -2516,19 +2846,22 @@ _GetConfigOption_()
 		return 1
 	fi
 	if [ ! -f "$optConfFile" ]
-	then
-		printf '' > "$optConfFile"
+	then printf '' > "$optConfFile"
 	fi
 	chmod 644 "$optConfFile"
 
 	keyPair="$(grep -m1 -E "^${1}=.*" "$optConfFile")"
 	if [ -z "$keyPair" ]
 	then
-		[ -n "$defValue" ] && \
-		echo "${1}=$defValue" >> "$optConfFile"
+		if [ -z "$defValue" ]
+		then echo "${1}=''" >> "$optConfFile"
+		else echo "${1}=$defValue" >> "$optConfFile"
+		fi
 		echo "$defValue"
 	else
-		echo "$keyPair" | cut -d'=' -f2
+		keyValue="$(echo "$keyPair" | cut -d'=' -f2- | sed "s/['\"]//g")"
+		[ "$keyValue" = 'TBD' ] && keyValue=''
+		printf '%s\n' "$keyValue"
 	fi
 	return 0
 }
@@ -2538,43 +2871,24 @@ _GetConfigOption_()
 #-------------------------------------#
 _LogKnockOption_()
 {
-    local logKnockUpdated=false
-
     case "$1" in
         enable)
-            logKnockUpdated=true
             logKnockEnabled=true
+            configOptsUpdated=true
             _SetConfigOption_ LOG_KNOCK_ENABLE true
-            printf "\n Debug log of port knocks is now ${MAGNTct}ENABLED${CLEARct}"
-            printf "\n [Log File: ${GREENct}${logKnockFPath}${CLEARct}]\n"
             ;;
         disable)
-            logKnockUpdated=true
             logKnockEnabled=false
+            configOptsUpdated=true
             _SetConfigOption_ LOG_KNOCK_ENABLE false
-            printf "\n Debug log of port knocks is now ${YELLWct}DISABLED${CLEARct}\n"
             ;;
         check)
             logKnockEnabled="$(_GetConfigOption_ LOG_KNOCK_ENABLE false)"
             "$logKnockEnabled" && return 0 || return 1
             ;;
-         *) ##IGNORE##
+         *) #IGNORE#
             ;;
     esac
-
-    if "$logKnockUpdated"
-    then
-        if _CheckBackgroundProcess_
-        then
-            printf "\n Make sure to restart the knock background process"
-            printf "\n so that the new debug log setting can take effect.\n"
-            printf "\n Would you like to restart the background process now? (y/n):"
-            if PromptYN
-            then _StartBackgroundProcess_ -menu
-            fi
-        fi
-        _PressAnyKey_
-    fi
 }
 
 #-------------------------------------#
@@ -2583,18 +2897,349 @@ _LogKnockOption_()
 _InvalidMenuOptionHandler_()
 {
 	if [ -n "$menuSelection" ]
-	then printf "\n Invalid menu option [$menuSelection]\n"
+	then printf "\n Invalid input [${REDct}${menuSelection}${CLEARct}]"
 	fi
-	printf "\n Select a valid menu option\n"
+	printf "\n Select a valid menu option.\n"
 	_PressAnyKey_
 }
 
 # Configuration Settings #
 logKnockEnabled="$(_GetConfigOption_ LOG_KNOCK_ENABLE false)"
-useEntwareScreen="$(_GetConfigOption_ USE_EW_SCREEN false)"
+
+#------------------------------------------------------#
+# The Entware 'screen' utility is NO LONGER SUPPORTED.
+# Remove the var setting from the configuration file.
+#------------------------------------------------------#
+if grep -qE '^USE_EW_SCREEN=.*' "$optConfFile"
+then sed -i '/^USE_EW_SCREEN=.*/d' "$optConfFile"
+fi
+
+#-------------------------------------#
+# Added by Martinski W. [2026-Sep-12] #
+#-------------------------------------#
+email_CC_Name="$(_GetConfigOption_ EMAIL_CC_NAME)"
+email_CC_Addr="$(_GetConfigOption_ EMAIL_CC_ADDR)"
+email_FormatType="$(_GetConfigOption_ EMAIL_FORMAT_TYPE HTML)"
+email_ENABLEDopt="$(_GetConfigOption_ EMAIL_SEND_ENABLE false)"
+
+_InvalidEmailOptionHandler_()
+{
+	printf "\n The email notification options are NOT available."
+	printf "\n AMTM email configuration file must be set up first.\n"
+	_PressAnyKey_
+}
+
+_ToggleEmailNotifications_()
+{
+	if ! "$email_ENABLEDopt"
+	then _SetConfigOption_ EMAIL_SEND_ENABLE true
+	else _SetConfigOption_ EMAIL_SEND_ENABLE false
+	fi
+	configOptsUpdated=true
+	email_ENABLEDopt="$(_GetConfigOption_ EMAIL_SEND_ENABLE false)"
+}
+
+_ToggleEmailFormatType_()
+{
+	if ! "$isEmailFormatTypeHTML"
+	then _SetConfigOption_ EMAIL_FORMAT_TYPE HTML
+	else _SetConfigOption_ EMAIL_FORMAT_TYPE PlainText
+	fi
+	email_FormatType="$(_GetConfigOption_ EMAIL_FORMAT_TYPE HTML)"
+	if [ "$email_FormatType" = "HTML" ]
+	then isEmailFormatTypeHTML=true
+	else isEmailFormatTypeHTML=false
+	fi
+}
+
+#-------------------------------------#
+# Added by Martinski W. [2026-Sep-13] #
+#-------------------------------------#
+_SetSecondaryEmailAddress_()
+{
+   local currCC_NameOpt  currCC_AddrOpt
+   local nextCC_NameOpt  nextCC_AddrOpt
+   local currCC_NameStr="Current Name/Alias:"
+   local currCC_AddrStr="Current Address:"
+   local invalidChars='[][" *?\\]'   #Avoid parsing issues#
+   local menuExitStr="${GREENct}e${CLEARct}=Go back"
+   local clearOptStr="${GREENct}C${CLEARct}=Clear/Remove Setting"
+   local doReturnToMenu  doClearSetting  minCharLen  maxCharLen  curCharLen
+
+   currCC_NameOpt="$(_GetConfigOption_ EMAIL_CC_NAME)"
+   currCC_AddrOpt="$(_GetConfigOption_ EMAIL_CC_ADDR)"
+
+   if [ -z "$currCC_AddrOpt" ] || [ "$currCC_AddrOpt" = "TBD" ]
+   then
+       nextCC_AddrOpt=""  currCC_AddrOpt=""
+       currCC_AddrStr="Currently ${YELLWct}NONE${CLEARct}"
+   else
+       nextCC_AddrOpt="$currCC_AddrOpt"
+       currCC_AddrStr="$currCC_AddrStr ${GREENct}${currCC_AddrOpt}${CLEARct}"
+   fi
+   currCC_AddrStr="$(echo "$currCC_AddrStr" | sed 's/%/%%/g')"
+
+   userInput=""
+   minCharLen=10
+   maxCharLen=64
+   doReturnToMenu=false
+   doClearSetting=false
+
+   while true
+   do
+       printf "\nEnter a secondary email address to receive email notifications.\n"
+       if [ -z "$currCC_AddrOpt" ]
+       then printf "[${menuExitStr}]\n"
+       else printf "[${menuExitStr}] [${clearOptStr}]\n"
+       fi
+       printf "[${currCC_AddrStr}]:  "
+       read -r userInput
+
+       [ -z "$userInput" ] && break
+
+       if printf '%s\n' "$userInput" | grep -qE '^(e|exit|Exit)$'
+       then doReturnToMenu=true ; break ; fi
+
+       if printf '%s\n' "$userInput" | grep -qE '^(C|c)$'
+       then doClearSetting=true ; break ; fi
+
+       if ! printf '%s\n' "$userInput" | grep -qE '.+[@].+'
+       then
+           printf "\n${REDct}INVALID input.${CLEARct}\n"
+           printf "Ampersand character [${GREENct}@${CLEARct}] was NOT found, or it's found at the wrong place.\n"
+           _PressAnyKey_ ; echo
+           continue
+       fi
+
+       # Catch invalid chars that may cause parsing errors #
+       if printf '%s\n' "$userInput" | grep -qE "$invalidChars"
+       then
+           printf "\n${REDct}INVALID input.${CLEARct}\n"
+           printf "One or more invalid characters were found.\n"
+           _PressAnyKey_ ; echo
+           continue
+       fi
+
+       curCharLen="${#userInput}"
+       if [ "$curCharLen" -lt "$minCharLen" ] || [ "$curCharLen" -gt "$maxCharLen" ]
+       then
+           printf "\n${REDct}INVALID input length${CLEARct} "
+           printf "[Minimum=${GREENct}${minCharLen}${CLEARct}, Maximum=${GREENct}${maxCharLen}${CLEARct}]\n"
+           _PressAnyKey_ ; echo
+           continue
+       fi
+
+       nextCC_AddrOpt="$userInput"
+       break
+   done
+
+   if "$doReturnToMenu" || \
+      { [ -z "$nextCC_AddrOpt" ] && [ -z "$currCC_AddrOpt" ] ; }
+   then return 0 ; fi   ##NO Change##
+
+   if "$doClearSetting" || \
+      { [ -z "$nextCC_AddrOpt" ] && [ -n "$currCC_AddrOpt" ] ; }
+   then
+       _SetConfigOption_ EMAIL_CC_NAME TBD
+       _SetConfigOption_ EMAIL_CC_ADDR TBD
+       printf "\nThe secondary email address and associated name/alias were removed successfully.\n"
+       _PressAnyKey_
+       return 0
+   fi
+
+   if [ -z "$currCC_NameOpt" ] || [ "$currCC_NameOpt" = "TBD" ]
+   then
+       currCC_NameOpt=""
+       nextCC_NameOpt="${nextCC_AddrOpt%%@*}"
+       currCC_NameStr="$currCC_NameStr ${GREENct}${nextCC_NameOpt}${CLEARct}"
+   else
+       nextCC_NameOpt="$currCC_NameOpt"
+       currCC_NameStr="$currCC_NameStr ${GREENct}${currCC_NameOpt}${CLEARct}"
+   fi
+   currCC_NameStr="$(echo "$currCC_NameStr" | sed 's/%/%%/g')"
+
+   userInput=""
+   minCharLen=6
+   maxCharLen=64
+   doReturnToMenu=false
+
+   while true
+   do
+       printf "\nEnter a name or alias for the secondary email address.\n"
+       printf "[${menuExitStr}]\n[${currCC_NameStr}]:  "
+       read -r userInput
+
+       if [ -z "$userInput" ] || \
+          printf '%s\n' "$userInput" | grep -qE '^(e|exit|Exit)$'
+       then doReturnToMenu=true ; break ; fi
+
+       # Catch invalid chars that may cause parsing errors #
+       if printf '%s\n' "$userInput" | grep -qE "$invalidChars"
+       then
+           printf "\n${REDct}INVALID input.${CLEARct}\n"
+           printf "One or more invalid characters were found.\n"
+           _PressAnyKey_ ; echo
+           continue
+       fi
+
+       curCharLen="${#userInput}"
+       if [ "$curCharLen" -lt "$minCharLen" ] || [ "$curCharLen" -gt "$maxCharLen" ]
+       then
+           printf "\n${REDct}INVALID input length${CLEARct} "
+           printf "[Minimum=${GREENct}${minCharLen}${CLEARct}, Maximum=${GREENct}${maxCharLen}${CLEARct}]\n"
+           _PressAnyKey_ ; echo
+           continue
+       fi
+
+       nextCC_NameOpt="$userInput"
+       break;
+   done
+
+   if [ "$nextCC_NameOpt" = "$currCC_NameOpt" ] && \
+      [ "$nextCC_AddrOpt" = "$currCC_AddrOpt" ]
+   then
+       printf "\nThe secondary email address and associated name/alias remain unchanged.\n"
+   else
+       _SetConfigOption_ EMAIL_CC_NAME "$nextCC_NameOpt"
+       _SetConfigOption_ EMAIL_CC_ADDR "$nextCC_AddrOpt"
+       printf "\nThe secondary email address and associated name/alias were updated successfully.\n"
+   fi
+   _PressAnyKey_
+   return 0
+}
+
+#-------------------------------------#
+# Added by Martinski W. [2026-Sep-13] #
+#-------------------------------------#
+_AdditionalOptionsMenu_()
+{
+	local menuSelection=""  logKnockSTATUS  logKnockENABLE
+	local statusSTR  numberCT  optionCT  configOptsUpdated=false
+
+	while true
+	do
+		banner
+        printf "\n     ${BOLDUNDERLN}${GREENct}Additional Options${CLEARct}\n"
+
+		if _LogKnockOption_ check
+		then
+			logKnockENABLE=true
+			logKnockSTATUS="${MAGNTct}ENABLED"
+		else
+			logKnockENABLE=false
+			logKnockSTATUS="${YELLWct}DISABLED"
+		fi
+		printf "\n ${GREENct} 1${CLEARct}. Toggle debug log of port knocks"
+		printf "\n     [Currently ${logKnockSTATUS}${CLEARct}]\n"
+		"$logKnockENABLE" && \
+        printf "     [${GREENct}${logKnockFPath}${CLEARct}]\n"
+
+        _CheckEmailConfigFileFromAMTM_ NOLOG
+        if "$isEmailConfigEnabledInAMTM"
+        then numberCT="$GREENct" ; optionCT=' '
+        else numberCT="$GRAYEDct" ; optionCT="$GRAYEDct "
+        fi
+
+		printf "\n ${numberCT} 2${CLEARct}.${optionCT}Toggle email notifications for port knocks ${CLEARct}\n"
+        if "$isEmailConfigEnabledInAMTM"
+        then
+            if "$email_ENABLEDopt"
+            then statusSTR="${GREENct}ENABLED"
+            else statusSTR="${REDct}DISABLED"
+            fi
+            printf "     [Currently ${statusSTR}${CLEARct}]\n"
+        fi
+
+        printf "\n ${numberCT} 3${CLEARct}.${optionCT}Toggle email format type ${CLEARct}\n"
+        if "$isEmailConfigEnabledInAMTM"
+        then
+            if "$isEmailFormatTypeHTML"
+            then statusSTR="${GREENct}HTML"
+            else statusSTR="${MAGNTct}Plain Text"
+            fi
+            printf "     [Currently: ${statusSTR}${CLEARct}]\n"
+        fi
+
+        printf "\n ${numberCT} 4${CLEARct}.${optionCT}Set email secondary address ${CLEARct}\n"
+        if "$isEmailConfigEnabledInAMTM"
+        then
+            if "$email_CC_Addr_OK"
+            then
+			    printf "     [Current Name/Alias: ${GREENct}%s${CLEARct}]\n" "$email_CC_Name"
+			    printf "     [Current 2nd Address: ${GREENct}%s${CLEARct}]\n" "$email_CC_Addr"
+            else
+			    printf "     [Currently ${YELLWct}NONE${CLEARct}]\n"
+            fi
+        fi
+
+        if "$email_ENABLEDopt"
+        then numberCT="$GREENct" ; optionCT=' '
+        else numberCT="$GRAYEDct" ; optionCT="$GRAYEDct "
+        fi
+        printf "\n ${numberCT} 5${CLEARct}.${optionCT}Test email notification setup ${CLEARct}\n"
+
+		printf "\n  ${GREENct}e${CLEARct}. Back to Main Menu\n\n"
+		printf " Enter selection: "
+		read -r menuSelection
+
+		case "$menuSelection" in
+			1)
+				if [ "$logKnockEnabled" = "false" ]
+				then _LogKnockOption_ enable
+				else _LogKnockOption_ disable
+				fi
+				;;
+			2)
+				if "$isEmailConfigEnabledInAMTM"
+				then _ToggleEmailNotifications_
+				else _InvalidEmailOptionHandler_
+				fi
+				;;
+			3)
+				if "$isEmailConfigEnabledInAMTM"
+				then _ToggleEmailFormatType_
+				else _InvalidEmailOptionHandler_
+				fi
+				;;
+			4)
+				if "$isEmailConfigEnabledInAMTM"
+				then _SetSecondaryEmailAddress_
+				else _InvalidEmailOptionHandler_
+				fi
+				;;
+			5)
+				if "$email_ENABLEDopt"
+				then
+                    _SendTestEmail_
+				else
+                    printf "\n The option to test email notifications is NOT available."
+                    printf "\n Email notifications for port knocks must be ${GREENct}ENABLED${CLEARct} first.\n"
+				fi
+                _PressAnyKey_
+				;;
+			[Ee]) break ;;
+			*) _InvalidMenuOptionHandler_
+				;;
+		esac
+	done
+
+    [ "$configOptsUpdated" = "false" ] && return 0
+
+    if _CheckBackgroundProcess_
+    then
+        printf "\n ${MAGNTct}**NOTICE**${CLEARct}"
+        printf "\n Make sure to restart the knock background process so that"
+        printf "\n the modified configuration option values can take effect.\n"
+        printf "\n Would you like to restart the background process now? (y/n):"
+        if PromptYN
+        then _StartBackgroundProcess_ -menu
+        fi
+        _PressAnyKey_
+    fi
+}
 
 #----------------------------------------#
-# Modified by Martinski W. [2026-Jul-30] #
+# Modified by Martinski W. [2026-Sep-12] #
 #----------------------------------------#
 ## Main Menu ##
 if [ $# -eq 0 ] || [ -z "$1" ]
@@ -2606,13 +3251,8 @@ then
 		banner
 		ShowStatus
 
-		if _LogKnockOption_ check
-		then logKnockSTATUS="${MAGNTct}ENABLED"
-		else logKnockSTATUS="${YELLWct}DISABLED"
-		fi
-
-		printf " Main Menu\n"
-		printf " =========\n\n"
+		printf "    ${GREENct}Main Menu${CLEARct}\n"
+		printf "    =========\n\n"
 		printf " ${GREENct}1${CLEARct}. Install/reinstall ${shScriptName}\n"
 		printf " ${GREENct}2${CLEARct}. Uninstall ${shScriptName}\n"
 		if CheckInstall
@@ -2622,7 +3262,7 @@ then
 			printf " ${GREENct}5${CLEARct}. Stop $shScriptName background process\n"
 			printf " ${GREENct}6${CLEARct}. Edit $shScriptName configuration file\n"
 			printf " ${GREENct}7${CLEARct}. Update script to latest version\n"
-			printf " ${GREENct}8${CLEARct}. Toggle debug log of port knocks [${logKnockSTATUS}${CLEARct}]\n"
+			printf " ${GREENct}8${CLEARct}. Additional options\n"
 		fi
 		printf "\n ${GREENct}e${CLEARct}. Exit\n\n"
 		printf " Enter selection: "
@@ -2630,7 +3270,7 @@ then
 
 		case "$menuSelection" in
 			1)
-				$shScriptFile -install -menu
+				$shScriptFile -install -force
 				_StopBackgroundProcess_ -menu >/dev/null
 
 			if CheckInstall
@@ -2648,9 +3288,9 @@ then
 					fi
 					rm -f "$savedConfig"
 				fi
-				printf "\nKnock.sh version $REV successfully installed!\n\n"
+				printf "\nKnock.sh version ${GREENct}${REV}${CLEARct} was successfully installed!\n"
 
-				if PromptYN "Would you like to edit the config file now ($configFPath)? (y/n):"
+				if PromptYN "\nWould you like to edit the config file now ($configFPath)? (y/n):"
 				then
 					echo
 					$shScriptFile -edit -nobanner
@@ -2723,11 +3363,7 @@ then
 					_PressAnyKey_
 				fi
 				;;
-			8)
-				if [ "$logKnockEnabled" = "false" ]
-				then _LogKnockOption_ enable
-				else _LogKnockOption_ disable
-				fi
+			8) _AdditionalOptionsMenu_
 				;;
 			*) _InvalidMenuOptionHandler_
 				;;
@@ -2744,12 +3380,12 @@ fi
 #-------------------------------------#
 _CheckSkynetInstalled_()
 {
-	local SkynetScript="${SCRIPTS_DIR}/firewall"
+	local skynetScript="${SCRIPTS_DIR}/firewall"
 
-	if [ ! -s "$SkynetScript" ] || [ ! -s "$firewallStart" ]
+	if [ ! -s "$skynetScript" ] || [ ! -s "$firewallStart" ]
 	then return 1
 	fi
-	if grep -qE "$SkynetScript .* skynetloc=.*/skynet (& )?# Skynet" "$firewallStart"
+	if grep -qE "$skynetScript .* skynetloc=.*/skynet .*# Skynet" "$firewallStart"
 	then return 0
 	else return 1
 	fi
@@ -2808,7 +3444,7 @@ _Read_dmesgToKnockLogFile_()
 
 	while true
 	do
-		knockMSG="$(dmesg | grep -E "^${shScriptName}[[:blank:]]+" | tail -n1)"
+		knockMSG="$(dmesg | grep -E "^${shScriptName}[[:blank:]].* PROTO=" | tail -n1)"
 		if [ -n "$knockMSG" ] && [ "$knockMSG" != "$LASTmsg" ]
 		then
 			echo "$knockMSG" >> "$dmesgKnockLogFILE"
@@ -2839,7 +3475,7 @@ _Read_dmesgToKnockLogFile_()
 _CheckKnockWaitTimer_()
 {
     if [ $# -eq 0 ] || [ -z "$1" ] ; then return 1 ; fi
-    if top -bn1 | grep -qE "/${knockWaitTimerName}_${1}.sh[ ]+"
+    if top -bn1 | grep -qE "[/]${knockWaitTimerName}_${1}.sh[ ]+"
     then return 0
     else return 1
     fi
@@ -2849,7 +3485,7 @@ _StopKnockWaitTimer_()
 {
     if [ $# -eq 0 ] || [ -z "$1" ] ; then return 1 ; fi
     local waitPID
-    waitPID="$(top -bn1 | grep -E "/${knockWaitTimerName}_${1}.sh[ ]+")"
+    waitPID="$(top -bn1 | grep -E "[/]${knockWaitTimerName}_${1}.sh[ ]+")"
     [ -z "$waitPID" ] && return 0
     waitPID="$(echo "$waitPID" | awk -F' ' '{print $1}')"
     kill -TERM "$waitPID" >/dev/null 2>&1
@@ -2903,7 +3539,7 @@ then
     exit 1
 fi
 
-if ! echo "$1" | grep -qE "^[1-9][0-9]{0,2}$" || \
+if ! echo "$1" | grep -qE '^[1-9][0-9]{0,2}$' || \
    [ "$1" -lt 5 ] || [ "$1" -gt 199 ]
 then
     logger -st "$logTagStr" -p 3 "**ERROR**: INVALID wait seconds [$1]. Exiting..."
@@ -2931,7 +3567,7 @@ _Launch_KnockWaitTimer_BGScript_()
 {
     if [ $# -eq 0 ] || [ -z "$1" ] || [ -z "$2" ] || \
        ! echo "$1" | grep -qE "^${portTAGregex}$" || \
-       ! echo "$2" | grep -qE "^[1-9][0-9]{0,2}$"
+       ! echo "$2" | grep -qE '^[1-9][0-9]{0,2}$'
     then return 1
     fi
     local bgScript_FName="${knockWaitTimerName}_${1}.sh"
@@ -2974,7 +3610,7 @@ then
 	then
 		echo -e "Knock version:\t$REV"
 	else
-		echo -e "Knock version:\t$REV ${MAGNTct}$developVer_TAG${CLEARct}"
+		echo -e "Knock version:\t$REV ${MAGNTct}${developVer_TAG}${CLEARct}"
 	fi
 	exit 0
 fi
@@ -3025,31 +3661,17 @@ fi
 #----------------------------------------#
 # Modified by Martinski W. [2026-Jun-09] #
 #----------------------------------------#
+#------------------------------------------------------#
+# The Entware 'screen' utility is NO LONGER SUPPORTED.
+# Inform users here if they still continue to use it.
+#------------------------------------------------------#
 if [ "$1" = "-screen" ]
 then
-	if [ ! -x /opt/sbin/screen ]
-	then
-		_LogMsg_ "**ERROR**: Entware Screen is NOT installed" "$pLogERROR"
-		exit 1
-	fi
-	if [ ! -s "$shScriptFile" ]
-	then
-		_LogMsg_ "**ERROR**: $shScriptName is NOT installed yet" "$pLogERROR"
-		exit 1
-	fi
-
-	logMsg="Starting $shScriptName background process"
-	_LogMsg_ "$logMsg" "$pLogWARNG" NOECHO ; _LogKnock_ "$logMsg"
-
-	#Stop any current rogue background process#
+	[ ! -x /opt/sbin/screen ] && exit 1
+	#Stop any possible rogue 'screen' process#
 	_CheckAndStopBackground_ScreenProcess_
-	_CheckAndStopBackground_DaemonProcess_
-
-	printf "Waiting for background process. Please wait...\n"
-	_StartBackground_ScreenProcess_ 5
-
-	_WaitForCustomFirewallRules_ 5
-	CheckStatus && exit 0 || exit 1
+	_LogMsg_ "**ERROR**: The Entware 'screen' utility is NO longer supported" "$pLogERROR"
+	exit 1
 fi
 
 #----------------------------------------#
@@ -3061,65 +3683,6 @@ then
 	exit 0
 fi
 
-#----------------------------------------#
-# Modified by Martinski W. [2026-Jun-07] #
-#----------------------------------------#
-_CheckForEntwareScreen_()
-{
-	printf "\tChecking for Entware..."
-	if [ ! -x /opt/bin/opkg ]
-	then
-		printf "\n**ERROR**: Entware NOT found. Please install Entware using the 'amtm' utility.\n"
-		return 1
-	fi
-	echo -e "$cm"
-
-	printf "\tChecking for Screen utility..."
-	if [ ! -x /opt/sbin/screen ]
-	then
-		if PromptYN "\n\nConfirm installing 'screen' utility? (y/n):"
-		then
-			echo
-			/opt/bin/opkg install screen
-			if [ ! -x /opt/sbin/screen ]
-			then
-				printf "\n**ERROR**: Entware screen installation failed\n\n"
-				return 1
-			fi
-		else
-			printf "\nCancelling installation\n\n"
-			return 1
-		fi
-		printf "\tScreen successfully installed."
-	fi
-	echo -e "$cm"
-	return 0
-}
-
-#----------------------------------------#
-# Modified by Martinski W. [2026-Jun-06] #
-#----------------------------------------#
-_SetUpUSB_PostMount_()
-{
-	# Clean up services-start #
-	if [ -s "$servicesStart" ] && \
-	   grep -q "/$shScriptName" "$servicesStart"
-	then
-		sed -i -e "\\~/${shScriptName}~d" "$servicesStart"
-	fi
-
-	echo -ne "\tUpdating post-mount file..."
-	if [ ! -s "$usbPostMount" ]
-	then
-		echo "#!/bin/sh" > "$usbPostMount"
-		echo >> "$usbPostMount"
-	fi
-	sed -i -e "\\~/${shScriptName}~d" "$usbPostMount"
-	echo "(sleep 30 && $shScriptFile -screen) & # Added by $shScriptName" >> "$usbPostMount"
-	chmod 755 "$usbPostMount"
-	echo -e "$cm"
-}
-
 #-------------------------------------#
 # Added by Martinski W. [2026-Jun-06] #
 #-------------------------------------#
@@ -3127,9 +3690,9 @@ _SetUpServicesStart_()
 {
 	# Clean up post-mount #
 	if [ -s "$usbPostMount" ] && \
-	   grep -q "/$shScriptName" "$usbPostMount"
+	   grep -q "$shScriptFile" "$usbPostMount"
 	then
-		sed -i -e "\\~/${shScriptName}~d" "$usbPostMount"
+		sed -i -e "\\~${shScriptFile}~d" "$usbPostMount"
 	fi
 
 	echo -ne "\tUpdating services-start file..."
@@ -3138,10 +3701,10 @@ _SetUpServicesStart_()
 		echo "#!/bin/sh" > "$servicesStart"
 		echo >> "$servicesStart"
 	fi
-	sed -i -e "\\~/${shScriptName}~d" "$servicesStart"
-	echo "(sleep 30 && $shScriptFile -daemon) & # Added by $shScriptName" >> "$servicesStart"
+	sed -i -e "\\~${shScriptFile}~d" "$servicesStart"
+	echo "(sleep 30 && $shScriptFile -daemon) &  #Added by $shScriptName#" >> "$servicesStart"
 	chmod 755 "$servicesStart"
-	echo -e "$cm"
+	printf "${cm}\n"
 }
 
 #-------------------------------------#
@@ -3194,6 +3757,11 @@ then
 		printf "\nInstalling ${shScriptName}...\n"
 	fi
 
+	if [ $# -gt 1 ] && [ "$2" = "-force" ] 
+	then updateType='-force'
+	else updateType='-check'
+	fi
+
 	if ! _CheckInstallationRequirements_
 	then exit 1
 	fi
@@ -3201,35 +3769,6 @@ then
 	mkdir -p "$INSTALL_DIR"
 	chmod 755 "$shScriptFile"
 	echo
-
-	#-------------------------------------------#
-	# Phasing out screen, Remove install prompt #
-	#-------------------------------------------#
-	##OFF## if [ -x /opt/bin/opkg ] && [ -x /opt/sbin/screen ]
-	##OFF## then action="use"
-	##OFF## else action="install"
-	##OFF## fi
-	##OFF##
-	##OFF## if [ $# -lt 2 ] || [ -z "$2" ] || [ "$2" = "-menu" ]
-	##OFF## then
-	##OFF##     printf "\nYou have the option to install/use the Entware 'screen' utility.\n"
-	##OFF##     printf "It will replace the built-in background process used by the script.\n"
-	##OFF##     if PromptYN "Would you like to $action the optional Entware 'screen' utility? (y/n):"
-	##OFF##     then useEntwareScreen=true
-	##OFF##     else useEntwareScreen=false
-	##OFF##     fi
-	##OFF## else
-	##OFF##     useEntwareScreen="$(_GetConfigOption_ USE_EW_SCREEN false)"
-	##OFF## fi
-
-	if "$useEntwareScreen"
-	then
-		if _CheckForEntwareScreen_
-		then useEntwareScreen=true
-		else useEntwareScreen=false
-		fi
-	fi
-	_SetConfigOption_ USE_EW_SCREEN "$useEntwareScreen"
 
 	# Set up configuration file #
 	if [ ! -s "$configFPath" ]
@@ -3257,7 +3796,7 @@ then
 44449,44410 br0 /jffs/scripts/doubleKnock.sh
 
 EOF
-		echo -e "$cm"
+		printf "${cm}\n"
 
 		if [ $# -lt 2 ] || [ -z "$2" ]
 		then
@@ -3277,16 +3816,11 @@ EOF
 		fi
 	else
 		echo -ne "\tFound configuration file..."
-		echo -e "$cm"
+		printf "${cm}\n"
 	fi
 	chmod 644 "$configFPath"
 
-	if "$useEntwareScreen"
-	then
-		_SetUpUSB_PostMount_
-	else
-		_SetUpServicesStart_
-	fi
+	_SetUpServicesStart_
 
 	# Set up firewall-start #
 	echo -ne "\tUpdating firewall-start file..."
@@ -3295,10 +3829,10 @@ EOF
 		echo "#!/bin/sh" > "$firewallStart"
 		echo >> "$firewallStart"
 	fi
-	sed -i -e "\\~/${shScriptName}~d" "$firewallStart"
-	echo "$shScriptFile -firewall # Added by $shScriptName" >> "$firewallStart"
+	sed -i -e "\\~${shScriptFile}~d" "$firewallStart"
+	echo "$shScriptFile -firewall  #Added by $shScriptName#" >> "$firewallStart"
 	chmod 755 "$firewallStart"
-	echo -e "$cm"
+	printf "${cm}\n"
 
 	# Set up profile.add #
 	echo -ne "\tUpdating profile.add file..."
@@ -3306,16 +3840,18 @@ EOF
 	then
 		touch "$profileAdd"
 	fi
-	sed -i -e "\\~/${shScriptName}~d" "$profileAdd"
-	echo "alias knock=\"sh $shScriptFile\" # Added by $shScriptName" >> "$profileAdd"
+	sed -i -e "\\~${shScriptFile}~d" "$profileAdd"
+	echo "alias knock=\"sh $shScriptFile\"  #Added by $shScriptName#" >> "$profileAdd"
 	chmod 644 "$profileAdd"
-	echo -e "$cm"
+	printf "${cm}\n"
+
+	_CheckCustomSendEmailScript_ "$updateType"
 
 	if [ $# -lt 2 ] || [ -z "$2" ]
 	then
-		printf "\nKnock.sh version $REV successfully installed!\n\n"
+		printf "\nKnock.sh version ${GREENct}${REV}${CLEARct} was successfully installed!\n"
 
-		if PromptYN "Would you like to edit the config file now [$configFPath]? (y/n):"
+		if PromptYN "\nWould you like to edit the config file now [$configFPath]? (y/n):"
 		then
 			echo
 			$shScriptFile -edit -nobanner
@@ -3394,7 +3930,7 @@ then
 		sed -i -e "\\~/${shScriptName}~d" "$firewallStart"
 	fi
 
-	rm -f "$versionFile"
+	rm -f "$versionFPath"
 	rm -f "$developFlag"
 	[ -s "$configFPath" ] && \
 	cp -fp "$configFPath" "$savedConfig"
@@ -3463,26 +3999,27 @@ then
 
 	if [ -f "$developFlag" ]
 	then
-		gitURL_REPO="$gitURL_DEVL"
+		gitURL_REPO="$SCRIPT_URL_DEVL"
 	fi
 	echo -n "Running amtmupdate..."
-	rm -f "$versionFile" 2>/dev/null
+	rm -f "$versionFPath"
 
-	_DownloadFileFromRepo_ "${gitURL_REPO}/version.txt" "$versionFile"
-	if [ -s "$versionFile" ]
+	if ! _DownloadFileFromRepo_ "$gitURL_REPO" "$versionFName" "$versionFPath"
 	then
-		_DownloadFileFromRepo_ "${gitURL_REPO}/$shScriptName" "$shScriptFile"
-		chmod 755 "$shScriptFile"
-		$shScriptFile -install -force >/dev/null
-		$shScriptFile -start -nobanner >/dev/null
-		echo -e "$cm"
-		echo "amtmupdate completed."
-		exit 0
-	else
-		echo
-		echo "amtmupdate failed."
+		printf "\nThe file ${REDct}${versionFName}${CLEARct} failed to download.\n"
 		exit 1
 	fi
+	if ! _DownloadFileFromRepo_ "$gitURL_REPO" "$shScriptName" "$shScriptFile"
+	then
+		printf "\nThe script ${REDct}${shScriptName}${CLEARct} was NOT updated. Download failed.\n"
+		exit 1
+	fi
+	chmod 755 "$shScriptFile"
+	$shScriptFile -install -force >/dev/null
+	$shScriptFile -start -nobanner >/dev/null
+	printf "${cm}\n"
+	echo "amtmupdate completed."
+	exit 0
 fi
 
 if [ "$1" = "-update" ]
@@ -3499,6 +4036,15 @@ then
 	exit
 fi
 
+if [ "$1" = "-email" ]
+then
+    if ! "$email_ENABLEDopt"
+	then return 1
+	fi
+	shift ; _SendKnockEmail_ "$@"
+	exit $?
+fi
+
 #-------------------------------------#
 # Added by Martinski W. [2026-Aug-06] #
 #-------------------------------------#
@@ -3513,13 +4059,13 @@ then
 	fi
 	trap '' HUP
 	_Read_dmesgToKnockLogFile_ "$2"
-	exit "$?"
+	exit $?
 fi
 
 if [ "$1" != "-loop" ]
 then
-	echo "Knock.sh: Router Commands for non-admin users"
-	echo "Version $REV"
+	printf "\nKnock.sh: Router Commands for non-admin users\n"
+	printf "Version: ${GREENct}$versionStr_TAG ${MAGNTct}${branchxStr_TAG:-[Branch: production]}${CLEARct}\n"
 	echo
 	echo "To install:"
 	echo -e "\t1) Move script to ${SCRIPTS_DIR}/ directory"
@@ -3531,25 +4077,25 @@ then
 	echo -e "\t\tDefault configuration file has use-case examples:"
 	echo -e "\t\t\tWake PC, reboot router, and run custom enable/disable scripts (e.g. for VPN Director rules)"
 	echo "	4B) Run 'knock -start'"
-	echo ""
+	echo
 	echo "To update configuration:"
 	echo "	Run 'knock -stop'"
 	echo "	Run 'knock -edit' -or-"
 	echo "	Manually update $configFPath"
 	echo "	Run 'knock -start'"
-	echo ""
+	echo
 	echo "To display current Knock status:"
 	echo "	Run 'knock -status'"
-	echo ""
+	echo
 	echo "To display current configuration file information:"
 	echo "	Run 'knock -config'"
-	echo ""
+	echo
 	echo "To update to the lastest version of script:"
 	echo "	Run 'knock -update'"
-	echo ""
+	echo
 	echo "To uninstall:"
 	echo "	Run 'knock -uninstall'"
-	echo ""
+	echo
 	echo "To display main menu:"
 	echo "	Run 'knock'"
 	exit 0
@@ -3609,7 +4155,7 @@ _WaitAndCheckForSemaphore_()
     local sleepSecsNUM=0  sleepSecsMAX=2
 
     if [ $# -gt 0 ] && [ -n "$1" ] && \
-       echo "$1" | grep -qE "^[1-9][0-9]?$"
+       echo "$1" | grep -qE '^[1-9][0-9]?$'
     then sleepSecsMAX="$1"
     fi
 
@@ -3640,10 +4186,7 @@ if ! _AcquireMutexFLock_
 then exit 1
 fi
 
-if ! "$useEntwareScreen"
-then trap '' HUP
-fi
-
+trap '' HUP
 rm -f "$knockLoopDaemonSEM"
 
 if [ ! -f "$dmesgKnockLogFILE" ]
@@ -3677,7 +4220,7 @@ echo "Version $REV"
 # For Debug Logging of Port Knocks #
 logKnockEnabled="$(_GetConfigOption_ LOG_KNOCK_ENABLE false)"
 
-logMsg="Waiting for port knocks ${versionStr_TAG}..."
+logMsg="Waiting for port knocks [v${versionStr_TAG}]..."
 _LogMsg_ "$logMsg" "$pLogWARNG" ; _LogKnock_ "$logMsg"
 
 renice 10 $$
@@ -3725,7 +4268,7 @@ do
     while read -r cfgLINE
     do
         if [ -z "$cfgLINE" ] || \
-           echo "$cfgLINE" | grep -qE "^[[:blank:]]*[#].*"
+           echo "$cfgLINE" | grep -qE '^[[:blank:]]*[#].*'
         then continue  #SKIP#
         fi
         cfgLINE="$(echo "$cfgLINE" | sed 's/  \+/  /')"
@@ -3734,7 +4277,7 @@ do
         theCMDx="$(echo "$cfgLINE" | awk -F' ' '{match($0, $3); print substr($0, RSTART)}')"
 
         if [ -z "$thePORTx" ] || [ -z "$theIFACE" ] || [ -z "$theCMDx" ] || \
-           echo "$theCMDx" | grep -qE "^[[:blank:]]*[#].*"
+           echo "$theCMDx" | grep -qE '^[[:blank:]]*[#].*'
         then continue  #INVALID#
         fi
 
@@ -3865,6 +4408,8 @@ do
             then eval $theCMDx &
             else eval $theCMDx "$kIFACE" "$kSRCIP" "$thePORTx" &
             fi
+            # Email Notification #
+            $shScriptFile -email "$kIFACE" "$kSRCIP" "$thePORTx" "$theCMDx" &
             thePortNum="" ; srceIPaddr=""
             break  #Get Next Port Knock#
         fi

@@ -1,8 +1,8 @@
 # Knock
 Knock: Router commands for non-admin users
 
-## v3.1.0
-### Updated on 2026-Aug-15
+## v3.2.0
+### Updated on 2026-Oct-12
 
 ## Installation
 ssh into your router and enter the following command:
@@ -79,6 +79,20 @@ Note that each Port Knock rule is expected to use unique port numbers; otherwise
 When sending a Multi-Port Knock sequence, each successive knock in the combination must be separated from the previous knock by at least **8** seconds, but no more than **22** seconds.
 
 
+## Email Notifications for Port Knocks
+
+You have the option to enable email notifications for every port knock that's successfully detected and triggers execution of its associated command. This feature can be enabled via the "**Additional Options**" submenu.
+
+Before enabling the "Email Notifications" option, users must have already configured their personal email settings via the AMTM 'em) Email settings' option.
+    
+Users can select the email format type: **HTML** or **Plain Text**.
+    
+A secondary email address can be set up to receive email notifications in addition to the primary recipient.
+
+The Knock script downloads, installs and updates the [**SendEmail**](https://github.com/Martinski4GitHub/SendEmail "Go to SendEmail repository") tool to handle all email notifications.
+
+
+##
 ## Additional Arguments in the Port Knock Command Execution
 
 For any script located in the **/jffs/scripts/** directory that gets executed via the command field of a port knock configuration line, **three** additional arguments are passed:
@@ -104,9 +118,21 @@ Users are free to completely ignore those additional arguments or use them as th
 
 ## Entware is **not** required
 
-The script no longer requires Entware to be installed. Installing and using the Entware 'screen' utility is now completely optional. Instead, the script creates a built-in background process running as a daemon.
+The Knock script no longer requires Entware to be installed. Installing and using the Entware 'screen' utility is now completely deprecated. Instead, the script creates a built-in background process running as a daemon. This means the script no longer has any dependencies on Entware being installed or the router having a USB-attached drive available.
 
 
+###
+## Main Menu
+
+![CLI Main Menu](./Images/Knock_CLI_MainMenu.jpg)
+
+###
+## Additional Configuration Options Menu
+
+![CLI Email Options Menu](./Images/Knock_CLI_ConfigOptionsMenu.jpg)
+
+
+###
 ## Example Use Cases
 
 1. Allow a user on local LAN, using the WireGuard server, or Tailscale server to wake up a specific PC
@@ -137,11 +163,15 @@ The user now executes this command with http://192.168.50.1:44444, for example
     44447 br0 /jffs/scripts/disable-example.sh
 ```
 
-Other use case possibilities from @Victor Jaep include:
+Other possible use-case scenarios may include:
 
-1. Kick off a backup -- like using "sh /jffs/scripts/backupmon.sh -backup"
+1. Kick off a router backup, e.g. using "sh /jffs/scripts/backupmon.sh -backup"
 2. Turn lights on and off with JGrana's huetil and uKasa apps
 3. Initiate a WAN failover with the wan_failover script
+4. Enable the SSH server over the WAN interface, but only when necessary, and disable it later when done.
+5. Enable WireGuard or OpenVPN Server over the WAN interface when needed, and disable it later when done.
+6. Enable/disable already-preconfigured forwarding ports over the WAN interface when needed
+7. Trigger a remote router reboot over the WAN interface when the router becomes otherwise unresponsive
 
 ## Acknowledgments
 The latest 3.0.0 release version was a collaborative effort between @Rung and @Martinski.
